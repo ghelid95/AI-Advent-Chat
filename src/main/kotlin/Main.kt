@@ -1,0 +1,351 @@
+import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import java.text.SimpleDateFormat
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+@Preview
+fun App(viewModel: ChatViewModel) {
+    var inputText by remember { mutableStateOf("") }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(viewModel.messages.size) {
+        if (viewModel.messages.isNotEmpty()) {
+            listState.animateScrollToItem(viewModel.messages.size - 1)
+        }
+    }
+
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Color(0xFF6200EE),
+            secondary = Color(0xFF03DAC6),
+            background = Color(0xFF121212),
+            surface = Color(0xFF1E1E1E),
+            onSurface = Color.White
+        )
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("AI Chat - OpenAI") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = Color.White
+                    ),
+                    actions = {
+                        IconButton(onClick = { showApiKeyDialog = true }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { viewModel.clearChat() }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Clear Chat",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                // Messages List
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (viewModel.messages.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Start a conversation with AI",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+
+                    items(viewModel.messages) { message ->
+                        MessageBubble(message)
+                    }
+
+                    if (viewModel.isLoading.value) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Error Message
+                viewModel.errorMessage.value?.let { error ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFF5252)
+                        )
+                    ) {
+                        Text(
+                            text = error,
+                            modifier = Modifier.padding(12.dp),
+                            color = Color.White
+                        )
+                    }
+                }
+
+                // Input Field
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Type your message...") },
+                        enabled = !viewModel.isLoading.value,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = {
+                            if (inputText.isNotBlank() && !viewModel.isLoading.value) {
+                                viewModel.sendMessage(inputText)
+                                inputText = ""
+                            }
+                        },
+                        enabled = inputText.isNotBlank() && !viewModel.isLoading.value,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                if (inputText.isNotBlank() && !viewModel.isLoading.value)
+                                    MaterialTheme.colorScheme.primary
+                                else Color.Gray,
+                                shape = RoundedCornerShape(28.dp)
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.Send,
+                            contentDescription = "Send",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showApiKeyDialog) {
+            ApiKeyDialog(onDismiss = { showApiKeyDialog = false })
+        }
+    }
+}
+
+@Composable
+fun MessageBubble(message: Message) {
+    val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val time = dateFormat.format(Date(message.timestamp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+    ) {
+        Card(
+            modifier = Modifier.widthIn(max = 400.dp),
+            shape = RoundedCornerShape(
+                topStart = 12.dp,
+                topEnd = 12.dp,
+                bottomStart = if (message.isUser) 12.dp else 4.dp,
+                bottomEnd = if (message.isUser) 4.dp else 12.dp
+            ),
+            colors = CardDefaults.cardColors(
+                containerColor = if (message.isUser)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (message.isUser) Color.White else Color.White
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = time,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (message.isUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
+                    fontWeight = FontWeight.Light
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ApiKeyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("About API Key") },
+        text = {
+            Column {
+                Text("Your OpenAI API key is configured at startup.")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "To change it, restart the application and provide a new key.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+fun main() = application {
+    var apiKey by remember { mutableStateOf("") }
+    var showApiKeyInput by remember { mutableStateOf(true) }
+    var viewModel: ChatViewModel? by remember { mutableStateOf(null) }
+
+    if (showApiKeyInput) {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "Enter API Key",
+            state = rememberWindowState(width = 400.dp, height = 400.dp)
+        ) {
+            MaterialTheme {
+                var inputKey by remember { mutableStateOf("") }
+                var error by remember { mutableStateOf<String?>(null) }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "OpenAI API Key",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = inputKey,
+                            onValueChange = {
+                                inputKey = it
+                                error = null
+                            },
+                            label = { Text("API Key") },
+                            placeholder = { Text("sk-...") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        error?.let {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = it,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        Button(
+                            onClick = {
+                                if (inputKey.isBlank()) {
+                                    error = "API key cannot be empty"
+                                } else {
+                                    apiKey = inputKey
+                                    viewModel = ChatViewModel(apiKey)
+                                    showApiKeyInput = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Start Chat")
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Window(
+            onCloseRequest = {
+                viewModel?.cleanup()
+                exitApplication()
+            },
+            title = "AI Chat",
+            state = rememberWindowState(width = 900.dp, height = 700.dp)
+        ) {
+            viewModel?.let { App(it) }
+        }
+    }
+}
