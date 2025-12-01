@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
@@ -15,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -139,6 +142,13 @@ fun App(viewModel: ChatViewModel) {
                     }
                 }
 
+                val captureMessage =  {
+                    if (inputText.isNotBlank() && !viewModel.isLoading.value) {
+                        viewModel.sendMessage(inputText)
+                        inputText = ""
+                    }
+                }
+
                 // Input Field
                 Row(
                     modifier = Modifier
@@ -152,9 +162,18 @@ fun App(viewModel: ChatViewModel) {
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Type your message...") },
                         enabled = !viewModel.isLoading.value,
+                        singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedBorderColor = Color.Gray
+                        ),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Send
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                captureMessage()
+                            }
                         )
                     )
 
@@ -162,10 +181,7 @@ fun App(viewModel: ChatViewModel) {
 
                     IconButton(
                         onClick = {
-                            if (inputText.isNotBlank() && !viewModel.isLoading.value) {
-                                viewModel.sendMessage(inputText)
-                                inputText = ""
-                            }
+                            captureMessage()
                         },
                         enabled = inputText.isNotBlank() && !viewModel.isLoading.value,
                         modifier = Modifier
