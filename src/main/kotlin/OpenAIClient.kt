@@ -15,6 +15,7 @@ data class ChatRequest(
     val model: String = "claude-sonnet-4-20250514",
     @SerialName("max_tokens") val maxTokens: Int = 1024,
     val messages: List<ChatMessage>,
+    val system: String? = null
 )
 
 @Serializable
@@ -63,11 +64,22 @@ class OpenAIClient(private val apiKey: String) {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
 
+            val systemPrompt = """
+                You must respond in valid JSON format with the following structure:
+                {
+                  "tokensUsed": <number of tokens used for this answer>,
+                  "answer": "<your answer to the user's message>",
+                  "joke" :<joke about theme of user message>"
+                }
+
+                Always respond with this JSON structure. Do not include any text outside the JSON.
+            """.trimIndent()
+
             val response: ChatResponse = client.post("https://api.anthropic.com/v1/messages") {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", "2023-06-01")
-                setBody(ChatRequest(messages = messages))
+                setBody(ChatRequest(messages = messages, system = systemPrompt))
             }.body()
 
             println("=== Received response ===")
