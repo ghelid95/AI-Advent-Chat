@@ -32,11 +32,18 @@ import java.util.*
 fun App(viewModel: ChatViewModel) {
     var inputText by remember { mutableStateOf("") }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showJokeDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(viewModel.messages.size) {
         if (viewModel.messages.isNotEmpty()) {
             listState.animateScrollToItem(viewModel.messages.size - 1)
+        }
+    }
+
+    LaunchedEffect(viewModel.joke.value) {
+        viewModel.joke.value?.let {
+            showJokeDialog = true
         }
     }
 
@@ -52,7 +59,7 @@ fun App(viewModel: ChatViewModel) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("AI Chat - OpenAI") },
+                    title = { Text("AI Chat - OpenAI.") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = Color.White
@@ -206,6 +213,16 @@ fun App(viewModel: ChatViewModel) {
         if (showApiKeyDialog) {
             ApiKeyDialog(onDismiss = { showApiKeyDialog = false })
         }
+
+        if (showJokeDialog && viewModel.joke.value != null) {
+            JokeDialog(
+                joke = viewModel.joke.value!!,
+                onDismiss = {
+                    showJokeDialog = false
+                    viewModel.joke.value = null
+                }
+            )
+        }
     }
 }
 
@@ -273,6 +290,27 @@ fun ApiKeyDialog(onDismiss: () -> Unit) {
                 Text("OK")
             }
         }
+    )
+}
+
+@Composable
+fun JokeDialog(joke: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Here's a joke for you!") },
+        text = {
+            Text(
+                text = joke,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Thanks!")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.primary
     )
 }
 

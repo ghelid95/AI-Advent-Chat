@@ -15,6 +15,7 @@ class ChatViewModel(private val apiKey: String) {
     val messages = mutableStateListOf<Message>()
     val isLoading = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
+    val joke = mutableStateOf<String?>(null)
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -37,7 +38,8 @@ class ChatViewModel(private val apiKey: String) {
                 val result = client.sendMessage(chatMessages)
 
                 result.onSuccess { response ->
-                    messages.add(Message(response, isUser = false))
+                    messages.add(Message(response.answer, isUser = false))
+                    joke.value = response.joke
                 }.onFailure { error ->
                     errorMessage.value = "Error: ${error.message}"
                 }

@@ -59,20 +59,24 @@ class OpenAIClient(private val apiKey: String) {
         }
     }
 
-    suspend fun sendMessage(messages: List<ChatMessage>): Result<String> {
+    suspend fun sendMessage(messages: List<ChatMessage>): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
 
             val systemPrompt = """
-                You must respond in valid JSON format with the following structure:
-                {
-                  "tokensUsed": <number of tokens used for this answer>,
-                  "answer": "<your answer to the user's message>",
-                  "joke" :<joke about theme of user message>"
-                }
+                You are professional chef. You can prepare a list of recipes, but only after you gather necessary information.
+                Information you need to do this is:
+                    1. Ingredients in user fridge.
+                    2. Spices user have.
+                    3. Kitchenware user owns.
+                    4. Kitchen appliances user have.
+                    5. Time he have for cooking.
+                Ask questions gradually, step by step. Any response must contain only one question, to not confuse user.
+                After you gather all this information, respond to user in valid JSON format with the following structure:
+                {"answer": "<final result with list of recipes with calories and nutritional values>","joke" :<joke about one of the recipes>"}
 
-                Always respond with this JSON structure. Do not include any text outside the JSON.
+                Always make final response with list of recipes with this JSON structure. Do not include any text outside the JSON. Masking is obsolete. JSON must must not contain any formating symbols, just plain string as it be in any REST API response.
             """.trimIndent()
 
             val response: ChatResponse = client.post("https://api.anthropic.com/v1/messages") {
@@ -87,7 +91,12 @@ class OpenAIClient(private val apiKey: String) {
             println("Stop reason: ${response.failReason}")
             println("Content: ${response.content?.firstOrNull()?.text?.take(100)}...")
 
-            Result.success(response.content?.firstOrNull()?.text ?: response.failReason ?: "No response")
+            val result = try {
+                DefaultJson.decodeFromString<LlmMessage>(response.content?.firstOrNull()?.text!!)
+            } catch (e: Exception) {
+                LlmMessage(response.content?.firstOrNull()?.text ?: response.failReason ?: "No response", joke = null)
+            }
+            Result.success(result)
         } catch (e: Exception) {
             println("=== Error occurred ===")
             println("Error: ${e.message}")
@@ -100,3 +109,9 @@ class OpenAIClient(private val apiKey: String) {
         client.close()
     }
 }
+
+@Serializable
+data class LlmMessage(
+    val answer: String,
+    val joke: String?,
+)
