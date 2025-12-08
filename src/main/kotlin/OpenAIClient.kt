@@ -15,7 +15,8 @@ data class ChatRequest(
     val model: String = "claude-sonnet-4-20250514",
     @SerialName("max_tokens") val maxTokens: Int = 1024,
     val messages: List<ChatMessage>,
-    val system: String? = null
+    val system: String? = null,
+    val temperature: Float? = null
 )
 
 @Serializable
@@ -59,31 +60,17 @@ class OpenAIClient(private val apiKey: String) {
         }
     }
 
-    suspend fun sendMessage(messages: List<ChatMessage>): Result<LlmMessage> {
+    suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
-
-            val systemPrompt = """
-                You are professional chef. You can prepare a list of recipes, but only after you gather necessary information.
-                Information you need to do this is:
-                    1. Ingredients in user fridge.
-                    2. Spices user have.
-                    3. Kitchenware user owns.
-                    4. Kitchen appliances user have.
-                    5. Time he have for cooking.
-                Ask questions gradually, step by step. Any response must contain only one question, to not confuse user.
-                After you gather all this information, respond to user in valid JSON format with the following structure:
-                {"answer": "<final result with list of recipes with calories and nutritional values>","joke" :<joke about one of the recipes>"}
-
-                Always make final response with list of recipes with this JSON structure. Do not include any text outside the JSON. Masking is obsolete. JSON must must not contain any formating symbols, just plain string as it be in any REST API response.
-            """.trimIndent()
+            println("Temperature: $temperature")
 
             val response: ChatResponse = client.post("https://api.anthropic.com/v1/messages") {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", "2023-06-01")
-                setBody(ChatRequest(messages = messages, system = systemPrompt))
+                setBody(ChatRequest(messages = messages, system = systemPrompt, temperature = temperature))
             }.body()
 
             println("=== Received response ===")

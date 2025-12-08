@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -23,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -31,7 +34,7 @@ import java.util.*
 @Preview
 fun App(viewModel: ChatViewModel) {
     var inputText by remember { mutableStateOf("") }
-    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var showJokeDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -65,7 +68,23 @@ fun App(viewModel: ChatViewModel) {
                         titleContentColor = Color.White
                     ),
                     actions = {
-                        IconButton(onClick = { showApiKeyDialog = true }) {
+                        IconButton(
+                            onClick = {
+                                if (viewModel.messages.isNotEmpty()) {
+                                    val chatHistory = viewModel.getChatHistory()
+                                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                                    clipboard.setContents(StringSelection(chatHistory), null)
+                                }
+                            },
+                            enabled = viewModel.messages.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy Chat",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showSettingsDialog = true }) {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = "Settings",
@@ -210,8 +229,8 @@ fun App(viewModel: ChatViewModel) {
             }
         }
 
-        if (showApiKeyDialog) {
-            ApiKeyDialog(onDismiss = { showApiKeyDialog = false })
+        if (showSettingsDialog) {
+            SettingsDialog(viewModel = viewModel, onDismiss = { showSettingsDialog = false })
         }
 
         if (showJokeDialog && viewModel.joke.value != null) {
@@ -288,6 +307,88 @@ fun ApiKeyDialog(onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("OK")
+            }
+        }
+    )
+}
+
+@Composable
+fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
+    var editedPrompt by remember { mutableStateOf(viewModel.systemPrompt.value) }
+    var editedTemperature by remember { mutableStateOf(viewModel.temperature.value) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Settings") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(500.dp)
+            ) {
+                Text(
+                    "System Prompt",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = editedPrompt,
+                    onValueChange = { editedPrompt = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    placeholder = { Text("Enter system prompt...") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Gray
+                    )
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "Temperature: ${String.format("%.2f", editedTemperature)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Controls randomness. Lower = focused, Higher = creative",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Slider(
+                    value = editedTemperature,
+                    onValueChange = { editedTemperature = it },
+                    valueRange = 0f..1f,
+                    steps = 9,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Note: Changes apply immediately to your next message. You can optionally clear the chat for a fresh start.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    viewModel.systemPrompt.value = editedPrompt
+                    viewModel.temperature.value = editedTemperature
+                    onDismiss()
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )
