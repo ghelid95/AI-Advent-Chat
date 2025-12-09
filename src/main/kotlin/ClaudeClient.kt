@@ -12,7 +12,7 @@ import kotlinx.serialization.json.Json
 
 @Serializable
 data class ChatRequest(
-    val model: String = "claude-sonnet-4-20250514",
+    val model: String,
     @SerialName("max_tokens") val maxTokens: Int = 1024,
     val messages: List<ChatMessage>,
     val system: String? = null,
@@ -44,7 +44,20 @@ data class Usage(
     @SerialName("output_tokens") val completionTokens: Int,
 )
 
-class OpenAIClient(private val apiKey: String) {
+@Serializable
+data class ModelsResponse(
+    val data: List<Model>
+)
+
+@Serializable
+data class Model(
+    val id: String,
+    val type: String,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+class ClaudeClient(private val apiKey: String) : ApiClient {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json {
@@ -60,17 +73,37 @@ class OpenAIClient(private val apiKey: String) {
         }
     }
 
-    suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float): Result<LlmMessage> {
+    override suspend fun fetchModels(): Result<List<Model>> {
+        return try {
+            println("=== Fetching models from Anthropic API ===")
+
+            val response: ModelsResponse = client.get("https://api.anthropic.com/v1/models") {
+                header("x-api-key", apiKey)
+                header("anthropic-version", "2023-06-01")
+            }.body()
+
+            println("=== Fetched ${response.data.size} models ===")
+            Result.success(response.data)
+        } catch (e: Exception) {
+            println("=== Error fetching models ===")
+            println("Error: ${e.message}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
             println("Temperature: $temperature")
+            println("Model: $model")
 
             val response: ChatResponse = client.post("https://api.anthropic.com/v1/messages") {
                 contentType(ContentType.Application.Json)
                 header("x-api-key", apiKey)
                 header("anthropic-version", "2023-06-01")
-                setBody(ChatRequest(messages = messages, system = systemPrompt, temperature = temperature))
+                setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature))
             }.body()
 
             println("=== Received response ===")
@@ -92,7 +125,7 @@ class OpenAIClient(private val apiKey: String) {
         }
     }
 
-    fun close() {
+    override fun close() {
         client.close()
     }
 }

@@ -10,8 +10,10 @@ data class Message(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-class ChatViewModel(private val apiKey: String) {
-    private val client = OpenAIClient(apiKey)
+class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
+    private var client: ApiClient = createClient(vendor, apiKey)
+    private var currentApiKey = apiKey
+
     val messages = mutableStateListOf<Message>()
     val isLoading = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
@@ -31,8 +33,42 @@ class ChatViewModel(private val apiKey: String) {
         Always make final response with list of recipes with this JSON structure. Do not include any text outside the JSON. Masking is obsolete. JSON must must not contain any formating symbols, just plain string as it be in any REST API response.
     """.trimIndent())
     val temperature = mutableStateOf(1.0f)
+    val selectedModel = mutableStateOf("claude-sonnet-4-20250514")
+    val availableModels = mutableStateListOf<Model>()
+    val isLoadingModels = mutableStateOf(true)
+    val currentVendor = mutableStateOf(vendor)
 
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
+        return when (vendor) {
+            Vendor.ANTHROPIC -> ClaudeClient(apiKey)
+            Vendor.PERPLEXITY -> PerplexityClient(apiKey)
+        }
+    }
+
+    init {
+        loadModels()
+    }
+
+    private fun loadModels() {
+        scope.launch {
+            try {
+                val result = client.fetchModels()
+                result.onSuccess { models ->
+                    availableModels.clear()
+                    availableModels.addAll(models)
+                    println("Successfully loaded ${models.size} models")
+                }.onFailure { error ->
+                    println("Failed to load models: ${error.message}")
+                }
+            } catch (e: Exception) {
+                println("Exception loading models: ${e.message}")
+            } finally {
+                isLoadingModels.value = false
+            }
+        }
+    }
 
     fun sendMessage(content: String) {
         if (content.isBlank()) return
@@ -50,7 +86,7 @@ class ChatViewModel(private val apiKey: String) {
                     )
                 }
 
-                val result = client.sendMessage(chatMessages, systemPrompt.value, temperature.value)
+                val result = client.sendMessage(chatMessages, systemPrompt.value, temperature.value, selectedModel.value)
 
                 result.onSuccess { response ->
                     messages.add(Message(response.answer, isUser = false))
@@ -76,6 +112,29 @@ class ChatViewModel(private val apiKey: String) {
             val role = if (message.isUser) "User" else "Assistant"
             "<$role>: ${message.content}"
         }
+    }
+
+    fun switchVendor(vendor: Vendor, apiKey: String) {
+        // Close old client
+        client.close()
+
+        // Create new client
+        currentVendor.value = vendor
+        currentApiKey = apiKey
+        client = createClient(vendor, apiKey)
+
+        // Reset models
+        availableModels.clear()
+        isLoadingModels.value = true
+
+        // Set appropriate default model
+        selectedModel.value = when (vendor) {
+            Vendor.ANTHROPIC -> "claude-sonnet-4-20250514"
+            Vendor.PERPLEXITY -> "sonar"
+        }
+
+        // Load new models
+        loadModels()
     }
 
     fun cleanup() {

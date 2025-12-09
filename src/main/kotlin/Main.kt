@@ -36,6 +36,8 @@ fun App(viewModel: ChatViewModel) {
     var inputText by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showJokeDialog by remember { mutableStateOf(false) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(viewModel.messages.size) {
@@ -62,7 +64,7 @@ fun App(viewModel: ChatViewModel) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("AI Chat - OpenAI.") },
+                    title = { Text("AI Chat - ${viewModel.currentVendor.value.displayName}") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = Color.White
@@ -108,6 +110,37 @@ fun App(viewModel: ChatViewModel) {
                     .padding(padding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
+                // Vendor Switcher
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Vendor.entries.forEach { vendor ->
+                        Button(
+                            onClick = {
+                                if (viewModel.currentVendor.value != vendor) {
+                                    pendingVendor = vendor
+                                    showApiKeyDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (viewModel.currentVendor.value == vendor)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    Color.Gray,
+                                contentColor = if (viewModel.currentVendor.value == vendor)
+                                    Color.White
+                                else
+                                    Color.Black
+                            )
+                        ) {
+                            Text(vendor.displayName)
+                        }
+                    }
+                }
+
                 // Messages List
                 LazyColumn(
                     state = listState,
@@ -242,6 +275,21 @@ fun App(viewModel: ChatViewModel) {
                 }
             )
         }
+
+        if (showApiKeyDialog && pendingVendor != null) {
+            VendorSwitchDialog(
+                vendor = pendingVendor!!,
+                onConfirm = { apiKey ->
+                    viewModel.switchVendor(pendingVendor!!, apiKey)
+                    showApiKeyDialog = false
+                    pendingVendor = null
+                },
+                onDismiss = {
+                    showApiKeyDialog = false
+                    pendingVendor = null
+                }
+            )
+        }
     }
 }
 
@@ -312,10 +360,13 @@ fun ApiKeyDialog(onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var editedPrompt by remember { mutableStateOf(viewModel.systemPrompt.value) }
     var editedTemperature by remember { mutableStateOf(viewModel.temperature.value) }
+    var editedModel by remember { mutableStateOf(viewModel.selectedModel.value) }
+    var expanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -324,7 +375,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(500.dp)
+                    .height(600.dp)
             ) {
                 Text(
                     "System Prompt",
@@ -367,6 +418,75 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                         activeTrackColor = MaterialTheme.colorScheme.primary
                     )
                 )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "Model",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (viewModel.isLoadingModels.value) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                } else if (viewModel.availableModels.isEmpty()) {
+                    OutlinedTextField(
+                        value = editedModel,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray
+                        ),
+                        enabled = false,
+                        label = { Text("Failed to load models") }
+                    )
+                } else {
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded }
+                    ) {
+                        val selectedModelInfo = viewModel.availableModels.find { it.id == editedModel }
+                        val displayValue = selectedModelInfo?.displayName ?: selectedModelInfo?.id ?: editedModel
+
+                        OutlinedTextField(
+                            value = displayValue,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Gray
+                            )
+                        )
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            viewModel.availableModels.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text(model.displayName ?: model.id) },
+                                    onClick = {
+                                        editedModel = model.id
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Note: Changes apply immediately to your next message. You can optionally clear the chat for a fresh start.",
@@ -380,6 +500,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 onClick = {
                     viewModel.systemPrompt.value = editedPrompt
                     viewModel.temperature.value = editedTemperature
+                    viewModel.selectedModel.value = editedModel
                     onDismiss()
                 }
             ) {
@@ -415,6 +536,74 @@ fun JokeDialog(joke: String, onDismiss: () -> Unit) {
     )
 }
 
+@Composable
+fun VendorSwitchDialog(vendor: Vendor, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var apiKey by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter ${vendor.displayName} API Key") },
+        text = {
+            Column {
+                Text(
+                    "Please enter your API key for ${vendor.displayName}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = {
+                        apiKey = it
+                        error = null
+                    },
+                    label = { Text("API Key") },
+                    placeholder = {
+                        Text(when (vendor) {
+                            Vendor.ANTHROPIC -> "sk-ant-..."
+                            Vendor.PERPLEXITY -> "pplx-..."
+                        })
+                    },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    isError = error != null
+                )
+                error?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (apiKey.isBlank()) {
+                        error = "API key cannot be empty"
+                    } else {
+                        onConfirm(apiKey)
+                    }
+                }
+            ) {
+                Text("Switch")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 fun main() = application {
     var apiKey by remember { mutableStateOf("") }
     var showApiKeyInput by remember { mutableStateOf(true) }
@@ -442,7 +631,7 @@ fun main() = application {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "OpenAI API Key",
+                            "Claude API Key",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -456,7 +645,7 @@ fun main() = application {
                                 error = null
                             },
                             label = { Text("API Key") },
-                            placeholder = { Text("sk-...") },
+                            placeholder = { Text("sk-ant-...") },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             modifier = Modifier.fillMaxWidth()
