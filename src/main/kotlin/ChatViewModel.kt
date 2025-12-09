@@ -37,6 +37,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     val availableModels = mutableStateListOf<Model>()
     val isLoadingModels = mutableStateOf(true)
     val currentVendor = mutableStateOf(vendor)
+    val sessionStats = mutableStateOf(SessionStats())
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -91,6 +92,17 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 result.onSuccess { response ->
                     messages.add(Message(response.answer, isUser = false))
                     joke.value = response.joke
+
+                    // Update session stats
+                    response.usage?.let { usage ->
+                        val currentStats = sessionStats.value
+                        sessionStats.value = SessionStats(
+                            totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
+                            totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
+                            totalCost = currentStats.totalCost + usage.estimatedCost,
+                            lastRequestTimeMs = usage.requestTimeMs
+                        )
+                    }
                 }.onFailure { error ->
                     errorMessage.value = "Error: ${error.message}"
                 }
@@ -105,6 +117,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     fun clearChat() {
         messages.clear()
         errorMessage.value = null
+        sessionStats.value = SessionStats()
     }
 
     fun getChatHistory(): String {
@@ -135,6 +148,8 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         // Load new models
         loadModels()
+
+        clearChat()
     }
 
     fun cleanup() {

@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -137,6 +136,57 @@ fun App(viewModel: ChatViewModel) {
                             )
                         ) {
                             Text(vendor.displayName)
+                        }
+                    }
+                }
+
+                // Usage Stats
+                val stats = viewModel.sessionStats.value
+                if (stats.totalTokens > 0) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    "Session Stats",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Gray
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Tokens: ${stats.totalTokens} (↑${stats.totalInputTokens} ↓${stats.totalOutputTokens})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    "Cost: $${String.format("%.4f", stats.totalCost)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFF4CAF50),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (stats.lastRequestTimeMs > 0) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Last: ${stats.lastRequestTimeMs}ms",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -336,30 +386,6 @@ fun MessageBubble(message: Message) {
     }
 }
 
-@Composable
-fun ApiKeyDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("About API Key") },
-        text = {
-            Column {
-                Text("Your OpenAI API key is configured at startup.")
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "To change it, restart the application and provide a new key.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("OK")
-            }
-        }
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
@@ -538,87 +564,108 @@ fun JokeDialog(joke: String, onDismiss: () -> Unit) {
 
 @Composable
 fun VendorSwitchDialog(vendor: Vendor, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
-    var apiKey by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    val apiKey = getApiKey(vendor)
+    val envVarName = when (vendor) {
+        Vendor.ANTHROPIC -> "CLAUDE_API_KEY"
+        Vendor.PERPLEXITY -> "PERPLEXITY_API_KEY"
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Enter ${vendor.displayName} API Key") },
-        text = {
-            Column {
+    if (apiKey != null) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Switch to ${vendor.displayName}?") },
+            text = {
                 Text(
-                    "Please enter your API key for ${vendor.displayName}",
+                    "Do you want to switch to ${vendor.displayName}?",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = {
-                        apiKey = it
-                        error = null
-                    },
-                    label = { Text("API Key") },
-                    placeholder = {
-                        Text(when (vendor) {
-                            Vendor.ANTHROPIC -> "sk-ant-..."
-                            Vendor.PERPLEXITY -> "pplx-..."
-                        })
-                    },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = Color.Gray
-                    ),
-                    isError = error != null
-                )
-                error?.let {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (apiKey.isBlank()) {
-                        error = "API key cannot be empty"
-                    } else {
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
                         onConfirm(apiKey)
                     }
+                ) {
+                    Text("Switch")
                 }
-            ) {
-                Text("Switch")
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("API Key Not Found") },
+            text = {
+                Column {
+                    Text(
+                        "Cannot switch to ${vendor.displayName}.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Please set the following environment variable:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF2A2A2A), RoundedCornerShape(8.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            "$envVarName=...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            color = Color.White
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("OK")
+                }
             }
-        }
-    )
+        )
+    }
+}
+
+fun getApiKey(vendor: Vendor): String? {
+    val envVarName = when (vendor) {
+        Vendor.ANTHROPIC -> "CLAUDE_API_KEY"
+        Vendor.PERPLEXITY -> "PERPLEXITY_API_KEY"
+    }
+    val value = System.getenv(envVarName)
+    println("Checking environment variable: $envVarName = ${if (value != null) "[SET]" else "[NOT SET]"}")
+    return value
 }
 
 fun main() = application {
-    var apiKey by remember { mutableStateOf("") }
-    var showApiKeyInput by remember { mutableStateOf(true) }
-    var viewModel: ChatViewModel? by remember { mutableStateOf(null) }
+    // Try to get Claude API key first, fall back to Perplexity
+    val claudeApiKey = getApiKey(Vendor.ANTHROPIC)
+    val perplexityApiKey = getApiKey(Vendor.PERPLEXITY)
 
-    if (showApiKeyInput) {
+    val (initialVendor, initialApiKey) = when {
+        claudeApiKey != null -> Vendor.ANTHROPIC to claudeApiKey
+        perplexityApiKey != null -> Vendor.PERPLEXITY to perplexityApiKey
+        else -> null to null
+    }
+
+    if (initialApiKey == null) {
+        // Show error window if no API keys are found
         Window(
             onCloseRequest = ::exitApplication,
-            title = "Enter API Key",
-            state = rememberWindowState(width = 400.dp, height = 400.dp)
+            title = "API Key Error",
+            state = rememberWindowState(width = 600.dp, height = 500.dp)
         ) {
             MaterialTheme {
-                var inputKey by remember { mutableStateOf("") }
-                var error by remember { mutableStateOf<String?>(null) }
-
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -631,65 +678,104 @@ fun main() = application {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "Claude API Key",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold
+                            "Missing API Keys",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            "No API keys found in environment variables",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        OutlinedTextField(
-                            value = inputKey,
-                            onValueChange = {
-                                inputKey = it
-                                error = null
-                            },
-                            label = { Text("API Key") },
-                            placeholder = { Text("sk-ant-...") },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            "Windows: Set via System Properties or IDE Run Configuration",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
                         )
 
-                        error?.let {
-                            Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2A2A2A), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
                             Text(
-                                text = it,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
+                                "Option 1: IntelliJ Run Configuration",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF03DAC6)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Run -> Edit Configurations -> Environment variables",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = Color.LightGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "CLAUDE_API_KEY=sk-ant-...",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = Color.White
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                "Option 2: Windows System Environment",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF03DAC6)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "setx CLAUDE_API_KEY \"sk-ant-...\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "(Restart IDE after using setx)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
                             )
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Button(
-                            onClick = {
-                                if (inputKey.isBlank()) {
-                                    error = "API key cannot be empty"
-                                } else {
-                                    apiKey = inputKey
-                                    viewModel = ChatViewModel(apiKey)
-                                    showApiKeyInput = false
-                                }
-                            },
+                            onClick = ::exitApplication,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Start Chat")
+                            Text("Exit")
                         }
                     }
                 }
             }
         }
     } else {
+        val viewModel = remember { ChatViewModel(initialApiKey, initialVendor!!) }
+
         Window(
             onCloseRequest = {
-                viewModel?.cleanup()
+                viewModel.cleanup()
                 exitApplication()
             },
             title = "AI Chat",
             state = rememberWindowState(width = 900.dp, height = 700.dp)
         ) {
-            viewModel?.let { App(it) }
+            App(viewModel)
         }
     }
 }

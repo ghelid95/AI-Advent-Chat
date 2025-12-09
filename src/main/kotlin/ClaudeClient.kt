@@ -9,6 +9,7 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.system.measureTimeMillis
 
 @Serializable
 data class ChatRequest(
@@ -92,6 +93,20 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
         }
     }
 
+    private fun calculateCost(model: String, inputTokens: Int, outputTokens: Int): Double {
+        // Approximate Claude pricing (as of 2024)
+        // Prices per million tokens
+        val pricing = when {
+            model.contains("opus") -> Pair(15.0, 25.0)
+            model.contains("sonnet-4") -> Pair(3.0, 15.0)
+            model.contains("sonnet") -> Pair(3.0, 15.0)
+            model.contains("haiku") -> Pair(1.0, 5.0)
+            else -> Pair(3.0, 15.0) // Default to Sonnet pricing
+        }
+
+        return (inputTokens * pricing.first / 1_000_000) + (outputTokens * pricing.second / 1_000_000)
+    }
+
     override suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
@@ -99,24 +114,47 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
             println("Temperature: $temperature")
             println("Model: $model")
 
-            val response: ChatResponse = client.post("https://api.anthropic.com/v1/messages") {
-                contentType(ContentType.Application.Json)
-                header("x-api-key", apiKey)
-                header("anthropic-version", "2023-06-01")
-                setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature))
-            }.body()
+            var response: ChatResponse? = null
+            val timeMs = measureTimeMillis {
+                response = client.post("https://api.anthropic.com/v1/messages") {
+                    contentType(ContentType.Application.Json)
+                    header("x-api-key", apiKey)
+                    header("anthropic-version", "2023-06-01")
+                    setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature))
+                }.body()
+            }
 
             println("=== Received response ===")
-            println("Response ID: ${response.id}")
-            println("Stop reason: ${response.failReason}")
-            println("Content: ${response.content?.firstOrNull()?.text?.take(100)}...")
+            println("Response ID: ${response?.id}")
+            println("Stop reason: ${response?.failReason}")
+            println("Content: ${response?.content?.firstOrNull()?.text?.take(100)}...")
+            println("Request time: ${timeMs}ms")
+
+            val inputTokens = response?.usage?.promptTokens ?: 0
+            val outputTokens = response?.usage?.completionTokens ?: 0
+            val totalTokens = inputTokens + outputTokens
+            val cost = calculateCost(model, inputTokens, outputTokens)
 
             val result = try {
-                DefaultJson.decodeFromString<LlmMessage>(response.content?.firstOrNull()?.text!!)
+                DefaultJson.decodeFromString<LlmMessage>(response?.content?.firstOrNull()?.text!!)
             } catch (e: Exception) {
-                LlmMessage(response.content?.firstOrNull()?.text ?: response.failReason ?: "No response", joke = null)
+                LlmMessage(
+                    response?.content?.firstOrNull()?.text ?: response?.failReason ?: "No response",
+                    joke = null
+                )
             }
-            Result.success(result)
+
+            val resultWithUsage = result.copy(
+                usage = UsageInfo(
+                    inputTokens = inputTokens,
+                    outputTokens = outputTokens,
+                    totalTokens = totalTokens,
+                    estimatedCost = cost,
+                    requestTimeMs = timeMs
+                )
+            )
+
+            Result.success(resultWithUsage)
         } catch (e: Exception) {
             println("=== Error occurred ===")
             println("Error: ${e.message}")
@@ -129,9 +167,3 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
         client.close()
     }
 }
-
-@Serializable
-data class LlmMessage(
-    val answer: String,
-    val joke: String?,
-)
