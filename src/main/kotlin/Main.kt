@@ -173,17 +173,39 @@ fun App(viewModel: ChatViewModel) {
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    "Cost: $${String.format("%.4f", stats.totalCost)}",
+                                    "Chat total cost: $${String.format("%.4f", stats.totalCost)}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color(0xFF4CAF50),
                                     fontWeight = FontWeight.Bold
                                 )
                                 if (stats.lastRequestTimeMs > 0) {
                                     Spacer(modifier = Modifier.height(4.dp))
+                                    val previousTime = viewModel.previousResponseTime.value
+                                    val currentTime = stats.lastRequestTimeMs
+                                    val comparisonText = if (previousTime != null && previousTime > 0) {
+                                        if (currentTime > previousTime) {
+                                            "Last response time: ${currentTime}ms ↓"
+                                        } else if (currentTime < previousTime) {
+                                            "Last response time: ${currentTime}ms ↑"
+                                        } else {
+                                            "Last response time: ${currentTime}ms"
+                                        }
+                                    } else {
+                                        "Last response time: ${currentTime}ms"
+                                    }
+                                    val textColor = if (previousTime != null && previousTime > 0) {
+                                        when {
+                                            currentTime > previousTime -> Color.Red
+                                            currentTime < previousTime -> Color(0xFF4CAF50)
+                                            else -> Color.Gray
+                                        }
+                                    } else {
+                                        Color.Gray
+                                    }
                                     Text(
-                                        "Last: ${stats.lastRequestTimeMs}ms",
+                                        comparisonText,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color.Gray
+                                        color = textColor
                                     )
                                 }
                             }
@@ -375,12 +397,38 @@ fun MessageBubble(message: Message) {
                     color = if (message.isUser) Color.White else Color.White
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = time,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (message.isUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
-                    fontWeight = FontWeight.Light
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Text(
+                        text = time,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (message.isUser) Color.White.copy(alpha = 0.7f) else Color.Gray,
+                        fontWeight = FontWeight.Light
+                    )
+                    message.usage?.let { usage ->
+                        Column(
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            val tokenCount = if (message.isUser) usage.inputTokens else usage.outputTokens
+                            val tokenType = if (message.isUser) "in" else "out"
+                            Text(
+                                text = "$tokenCount tokens $tokenType",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (message.isUser) Color.White.copy(alpha = 0.6f) else Color.Gray.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Light
+                            )
+                            Text(
+                                text = "$${String.format("%.4f", if (message.isUser) usage.estimatedInputCost else usage.estimatedOutputCost)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (message.isUser) Color.White.copy(alpha = 0.6f) else Color(0xFF4CAF50).copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Light
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -391,6 +439,7 @@ fun MessageBubble(message: Message) {
 fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var editedPrompt by remember { mutableStateOf(viewModel.systemPrompt.value) }
     var editedTemperature by remember { mutableStateOf(viewModel.temperature.value) }
+    var editedMaxTokens by remember { mutableStateOf(viewModel.maxTokens.value.toString()) }
     var editedModel by remember { mutableStateOf(viewModel.selectedModel.value) }
     var expanded by remember { mutableStateOf(false) }
 
@@ -443,6 +492,33 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                         thumbColor = MaterialTheme.colorScheme.primary,
                         activeTrackColor = MaterialTheme.colorScheme.primary
                     )
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "Max Tokens",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Maximum number of tokens in the response",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = editedMaxTokens,
+                    onValueChange = {
+                        if (it.all { char -> char.isDigit() } || it.isEmpty()) {
+                            editedMaxTokens = it
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("e.g., 4096") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Gray
+                    ),
+                    singleLine = true
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
@@ -526,6 +602,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 onClick = {
                     viewModel.systemPrompt.value = editedPrompt
                     viewModel.temperature.value = editedTemperature
+                    viewModel.maxTokens.value = editedMaxTokens.toIntOrNull() ?: 4096
                     viewModel.selectedModel.value = editedModel
                     onDismiss()
                 }

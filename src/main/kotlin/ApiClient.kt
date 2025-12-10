@@ -1,6 +1,6 @@
 interface ApiClient {
     suspend fun fetchModels(): Result<List<Model>>
-    suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String): Result<LlmMessage>
+    suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String, maxTokens: Int): Result<LlmMessage>
     fun close()
 }
 

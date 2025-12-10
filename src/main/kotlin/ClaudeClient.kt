@@ -3,6 +3,7 @@ import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -72,6 +73,11 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
             level = LogLevel.ALL
             sanitizeHeader { header -> header == "x-api-key" }
         }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60_000
+            connectTimeoutMillis = 60_000
+            socketTimeoutMillis = 60_000
+        }
     }
 
     override suspend fun fetchModels(): Result<List<Model>> {
@@ -93,7 +99,7 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
         }
     }
 
-    private fun calculateCost(model: String, inputTokens: Int, outputTokens: Int): Double {
+    private fun calculateCost(model: String, inputTokens: Int, outputTokens: Int): Triple<Double, Double, Double> {
         // Approximate Claude pricing (as of 2024)
         // Prices per million tokens
         val pricing = when {
@@ -104,15 +110,19 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
             else -> Pair(3.0, 15.0) // Default to Sonnet pricing
         }
 
-        return (inputTokens * pricing.first / 1_000_000) + (outputTokens * pricing.second / 1_000_000)
+        val inputCost = inputTokens * pricing.first / 1_000_000
+        val outputCost = outputTokens * pricing.second / 1_000_000
+
+        return Triple(inputCost, outputCost, inputCost + outputCost)
     }
 
-    override suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String): Result<LlmMessage> {
+    override suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String, maxTokens: Int): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
             println("Temperature: $temperature")
             println("Model: $model")
+            println("Max Tokens: $maxTokens")
 
             var response: ChatResponse? = null
             val timeMs = measureTimeMillis {
@@ -120,7 +130,7 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
                     contentType(ContentType.Application.Json)
                     header("x-api-key", apiKey)
                     header("anthropic-version", "2023-06-01")
-                    setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature))
+                    setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature, maxTokens = maxTokens))
                 }.body()
             }
 
@@ -149,8 +159,10 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
                     inputTokens = inputTokens,
                     outputTokens = outputTokens,
                     totalTokens = totalTokens,
-                    estimatedCost = cost,
-                    requestTimeMs = timeMs
+                    estimatedCost = cost.third,
+                    requestTimeMs = timeMs,
+                    estimatedInputCost = cost.first,
+                    estimatedOutputCost = cost.second,
                 )
             )
 

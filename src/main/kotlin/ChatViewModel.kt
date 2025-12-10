@@ -7,7 +7,8 @@ import kotlinx.coroutines.launch
 data class Message(
     val content: String,
     val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val usage: UsageInfo? = null
 )
 
 class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
@@ -18,26 +19,16 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     val isLoading = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
     val joke = mutableStateOf<String?>(null)
-    val systemPrompt = mutableStateOf("""
-        You are professional chef. You can prepare a list of recipes, but only after you gather necessary information.
-        Information you need to do this is:
-            1. Ingredients in user fridge.
-            2. Spices user have.
-            3. Kitchenware user owns.
-            4. Kitchen appliances user have.
-            5. Time he have for cooking.
-        Ask questions gradually, step by step. Any response must contain only one question, to not confuse user.
-        After you gather all this information, respond to user in valid JSON format with the following structure:
-        {"answer": "<final result with list of recipes with calories and nutritional values>","joke" :<joke about one of the recipes>"}
-
-        Always make final response with list of recipes with this JSON structure. Do not include any text outside the JSON. Masking is obsolete. JSON must must not contain any formating symbols, just plain string as it be in any REST API response.
-    """.trimIndent())
+    val systemPrompt = mutableStateOf("")
     val temperature = mutableStateOf(1.0f)
+    val maxTokens = mutableStateOf(1024)
     val selectedModel = mutableStateOf("claude-sonnet-4-20250514")
     val availableModels = mutableStateListOf<Model>()
     val isLoadingModels = mutableStateOf(true)
     val currentVendor = mutableStateOf(vendor)
     val sessionStats = mutableStateOf(SessionStats())
+    val lastResponseTime = mutableStateOf<Long?>(null)
+    val previousResponseTime = mutableStateOf<Long?>(null)
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -87,13 +78,22 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     )
                 }
 
-                val result = client.sendMessage(chatMessages, systemPrompt.value, temperature.value, selectedModel.value)
+                val result = client.sendMessage(chatMessages, systemPrompt.value, temperature.value, selectedModel.value, maxTokens.value)
 
                 result.onSuccess { response ->
-                    messages.add(Message(response.answer, isUser = false))
+                    // Update the last user message with usage info
+                    response.usage?.let { usage ->
+                        val lastUserMessageIndex = messages.indexOfLast { it.isUser }
+                        if (lastUserMessageIndex != -1) {
+                            val lastUserMessage = messages[lastUserMessageIndex]
+                            messages[lastUserMessageIndex] = lastUserMessage.copy(usage = usage)
+                        }
+                    }
+
+                    messages.add(Message(response.answer, isUser = false, usage = response.usage))
                     joke.value = response.joke
 
-                    // Update session stats
+                    // Update session stats and last response time
                     response.usage?.let { usage ->
                         val currentStats = sessionStats.value
                         sessionStats.value = SessionStats(
@@ -102,6 +102,9 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                             totalCost = currentStats.totalCost + usage.estimatedCost,
                             lastRequestTimeMs = usage.requestTimeMs
                         )
+                        // Store current as previous before updating
+                        previousResponseTime.value = lastResponseTime.value
+                        lastResponseTime.value = usage.requestTimeMs
                     }
                 }.onFailure { error ->
                     errorMessage.value = "Error: ${error.message}"
@@ -148,6 +151,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         // Load new models
         loadModels()
+
+        // Reset last response time when switching vendors
+        lastResponseTime.value = null
+        previousResponseTime.value = null
 
         clearChat()
     }
