@@ -1,3 +1,5 @@
+package data
+
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -13,7 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlin.system.measureTimeMillis
 
 @Serializable
-data class PerplexityRequest(
+private data class PerplexityRequest(
     val model: String,
     @SerialName("messages") val messages: List<PerplexityMessage>,
     @SerialName("max_tokens") val maxTokens: Int = 1024,
@@ -21,26 +23,26 @@ data class PerplexityRequest(
 )
 
 @Serializable
-data class PerplexityMessage(
+private data class PerplexityMessage(
     val role: String,
     val content: String
 )
 
 @Serializable
-data class PerplexityResponse(
+private data class PerplexityResponse(
     val id: String? = null,
     val choices: List<Choice>? = null,
     val usage: PerplexityUsage,
 )
 
 @Serializable
-data class Choice(
+private data class Choice(
     val message: PerplexityMessage,
     @SerialName("finish_reason") val finishReason: String? = null
 )
 
 @Serializable
-data class PerplexityUsage(
+private data class PerplexityUsage(
     @SerialName("prompt_tokens") val promptTokens: Int,
     @SerialName("completion_tokens") val completionTokens: Int,
     @SerialName("total_tokens") val totalTokens: Int,
@@ -48,7 +50,7 @@ data class PerplexityUsage(
 )
 
 @Serializable
-data class PerplexityCost(
+private data class PerplexityCost(
     @SerialName("input_tokens_cost") val inputTokensCost: Double,
     @SerialName("output_tokens_cost") val outputTokensCost: Double,
     @SerialName("request_cost") val requestCost: Double,

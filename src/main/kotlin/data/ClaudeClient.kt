@@ -1,3 +1,5 @@
+package data
+
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -13,7 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlin.system.measureTimeMillis
 
 @Serializable
-data class ChatRequest(
+private data class ChatRequest(
     val model: String,
     @SerialName("max_tokens") val maxTokens: Int = 1024,
     val messages: List<ChatMessage>,
@@ -22,13 +24,7 @@ data class ChatRequest(
 )
 
 @Serializable
-data class ChatMessage(
-    val role: String,
-    val content: String
-)
-
-@Serializable
-data class ChatResponse(
+private data class ChatResponse(
     val id: String? = null,
     val content: List<Content>? = null,
     val usage: Usage? = null,
@@ -36,27 +32,19 @@ data class ChatResponse(
 )
 
 @Serializable
-data class Content(
+private data class Content(
     val text: String,
 )
 
 @Serializable
-data class Usage(
+private data class Usage(
     @SerialName("input_tokens") val promptTokens: Int,
     @SerialName("output_tokens") val completionTokens: Int,
 )
 
 @Serializable
-data class ModelsResponse(
+private data class ModelsResponse(
     val data: List<Model>
-)
-
-@Serializable
-data class Model(
-    val id: String,
-    val type: String,
-    @SerialName("display_name") val displayName: String? = null,
-    @SerialName("created_at") val createdAt: String? = null
 )
 
 class ClaudeClient(private val apiKey: String) : ApiClient {
