@@ -1,5 +1,8 @@
 package data
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class SessionStats(
     val totalInputTokens: Int = 0,
     val totalOutputTokens: Int = 0,

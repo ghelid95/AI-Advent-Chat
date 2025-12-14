@@ -7,6 +7,9 @@ import data.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.UUID
 
 class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private var client: ApiClient = createClient(vendor, apiKey)
@@ -17,7 +20,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     val errorMessage = mutableStateOf<String?>(null)
     val joke = mutableStateOf<String?>(null)
     val systemPrompt = mutableStateOf("")
-    val temperature = mutableStateOf(1.0f)
+    val temperature = mutableStateOf(0.1f)
     val maxTokens = mutableStateOf(1024)
     val selectedModel = mutableStateOf("claude-sonnet-4-20250514")
     val availableModels = mutableStateListOf<Model>()
@@ -34,6 +37,13 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private val internalMessages = mutableStateListOf<InternalMessage>()
     private val summaryExpansionState = mutableStateMapOf<Long, Boolean>()
 
+    // Session management
+    private val sessionStorage = SessionStorage()
+    val currentSessionId = mutableStateOf<String?>(null)
+    val currentSessionName = mutableStateOf("New Session")
+    val sessions = mutableStateListOf<SessionSummary>()
+    private val sessionsListMutex = Mutex()
+
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
@@ -45,6 +55,8 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     init {
         loadModels()
+        loadSessionsList()
+        loadLastSession()
     }
 
     private fun loadModels() {
@@ -111,7 +123,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     content = internalMsg.content
                 )
                 is InternalMessage.CompactedSummary -> ChatMessage(
-                    role = "assistant",
+                    // Claude uses "assistant" for summaries, Perplexity needs "system"
+                    role = when (currentVendor.value) {
+                        Vendor.ANTHROPIC -> "assistant"
+                        Vendor.PERPLEXITY -> "system"
+                    },
                     content = "[Previous conversation summary: ${internalMsg.summaryContent}]"
                 )
             }
@@ -189,6 +205,9 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     if (shouldTriggerAutoCompaction()) {
                         performCompaction(auto = true)
                     }
+
+                    // Auto-save session after successful message
+                    saveCurrentSession()
                 }.onFailure { error ->
                     errorMessage.value = "Error: ${error.message}"
                 }
@@ -331,6 +350,9 @@ Provide ONLY the summary text.
                         lastRequestTimeMs = currentStats.lastRequestTimeMs
                     )
                 }
+
+                // Auto-save session after compaction
+                saveCurrentSession()
             }.onFailure { error ->
                 errorMessage.value = "Compaction failed: ${error.message}"
             }
@@ -355,12 +377,19 @@ Provide ONLY the summary text.
     }
 
     fun clearChat() {
+        val currentId = currentSessionId.value
+
         messages.clear()
         internalMessages.clear()
         summaryExpansionState.clear()
         messagesSinceLastCompaction.value = 0
         errorMessage.value = null
         sessionStats.value = SessionStats()
+
+        // Delete the current session file instead of saving empty state
+        if (currentId != null) {
+            deleteSession(currentId)
+        }
     }
 
     fun getChatHistory(): String {
@@ -371,6 +400,9 @@ Provide ONLY the summary text.
     }
 
     fun switchVendor(vendor: Vendor, apiKey: String) {
+        // Save current session before switching
+        saveCurrentSession()
+
         // Close old client
         client.close()
 
@@ -396,10 +428,190 @@ Provide ONLY the summary text.
         lastResponseTime.value = null
         previousResponseTime.value = null
 
-        clearChat()
+        // Create new session with the new vendor
+        createNewSession("New ${vendor.displayName} Session")
     }
 
     fun cleanup() {
+        saveCurrentSession() // Save before cleanup
         client.close()
+    }
+
+    // Session Management Methods
+
+    private fun loadSessionsList() {
+        scope.launch {
+            // Use mutex to prevent concurrent updates to sessions list
+            sessionsListMutex.withLock {
+                val allSessions = sessionStorage.getAllSessions()
+                // Update list on main thread to avoid race conditions
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    sessions.clear()
+                    sessions.addAll(allSessions)
+                }
+            }
+        }
+    }
+
+    private fun loadLastSession() {
+        scope.launch {
+            val lastSessionId = sessionStorage.getLastActiveSessionId()
+            if (lastSessionId != null) {
+                loadSession(lastSessionId)
+            } else {
+                // Create a new session if no previous session exists
+                createNewSession()
+            }
+        }
+    }
+
+    fun createNewSession(name: String = "New Session") {
+        scope.launch {
+            val sessionId = UUID.randomUUID().toString()
+            val timestamp = System.currentTimeMillis()
+
+            val newSession = SessionData(
+                id = sessionId,
+                name = name,
+                createdAt = timestamp,
+                lastModified = timestamp,
+                settings = SessionSettings(
+                    vendor = currentVendor.value,
+                    selectedModel = selectedModel.value,
+                    systemPrompt = systemPrompt.value,
+                    temperature = temperature.value,
+                    maxTokens = maxTokens.value,
+                    compactionEnabled = compactionEnabled.value
+                ),
+                messages = emptyList(),
+                sessionStats = SessionStats()
+            )
+
+            sessionStorage.saveSession(newSession)
+
+            currentSessionId.value = sessionId
+            currentSessionName.value = name
+
+            // Clear current chat
+            internalMessages.clear()
+            messages.clear()
+            summaryExpansionState.clear()
+            messagesSinceLastCompaction.value = 0
+            errorMessage.value = null
+            sessionStats.value = SessionStats()
+
+            loadSessionsList()
+        }
+    }
+
+    fun loadSession(sessionId: String) {
+        scope.launch {
+            val session = sessionStorage.loadSession(sessionId)
+            if (session != null) {
+                // Switch vendor if needed (without clearing chat)
+                if (currentVendor.value != session.settings.vendor) {
+                    client.close()
+                    currentApiKey = when (session.settings.vendor) {
+                        Vendor.ANTHROPIC -> System.getenv("CLAUDE_API_KEY") ?: ""
+                        Vendor.PERPLEXITY -> System.getenv("PERPLEXITY_API_KEY") ?: ""
+                    }
+                    client = createClient(session.settings.vendor, currentApiKey)
+                    availableModels.clear()
+                    isLoadingModels.value = true
+                    loadModels()
+                }
+                // Restore settings
+                currentVendor.value = session.settings.vendor
+                selectedModel.value = session.settings.selectedModel
+                systemPrompt.value = session.settings.systemPrompt
+                temperature.value = session.settings.temperature
+                maxTokens.value = session.settings.maxTokens
+                compactionEnabled.value = session.settings.compactionEnabled
+
+                // Restore messages
+                internalMessages.clear()
+                internalMessages.addAll(session.messages.map { it.toInternal() })
+                syncToUIMessages()
+
+                // Restore session stats
+                sessionStats.value = session.sessionStats
+
+                // Update current session
+                currentSessionId.value = session.id
+                currentSessionName.value = session.name
+
+
+            }
+        }
+    }
+
+    fun saveCurrentSession() {
+        val sessionId = currentSessionId.value ?: return
+
+        // Capture current values BEFORE launching coroutine to avoid race conditions
+        val capturedVendor = currentVendor.value
+        val capturedModel = selectedModel.value
+        val capturedSystemPrompt = systemPrompt.value
+        val capturedTemperature = temperature.value
+        val capturedMaxTokens = maxTokens.value
+        val capturedCompactionEnabled = compactionEnabled.value
+        val capturedSessionName = currentSessionName.value
+        val capturedMessages = internalMessages.map { it.toSerializable() }
+        val capturedStats = sessionStats.value
+
+        scope.launch {
+            val session = SessionData(
+                id = sessionId,
+                name = capturedSessionName,
+                createdAt = sessionStorage.loadSession(sessionId)?.createdAt ?: System.currentTimeMillis(),
+                lastModified = System.currentTimeMillis(),
+                settings = SessionSettings(
+                    vendor = capturedVendor,
+                    selectedModel = capturedModel,
+                    systemPrompt = capturedSystemPrompt,
+                    temperature = capturedTemperature,
+                    maxTokens = capturedMaxTokens,
+                    compactionEnabled = capturedCompactionEnabled
+                ),
+                messages = capturedMessages,
+                sessionStats = capturedStats
+            )
+
+            sessionStorage.saveSession(session)
+            loadSessionsList()
+        }
+    }
+
+    fun deleteSession(sessionId: String) {
+        scope.launch {
+            val success = sessionStorage.deleteSession(sessionId)
+            if (success) {
+                loadSessionsList()
+
+                // If we deleted the current session, create a new one
+                if (currentSessionId.value == sessionId) {
+                    createNewSession()
+                }
+            }
+        }
+    }
+
+    fun renameSession(sessionId: String, newName: String) {
+        scope.launch {
+            val session = sessionStorage.loadSession(sessionId)
+            if (session != null) {
+                val updatedSession = session.copy(
+                    name = newName,
+                    lastModified = System.currentTimeMillis()
+                )
+                sessionStorage.saveSession(updatedSession)
+
+                if (currentSessionId.value == sessionId) {
+                    currentSessionName.value = newName
+                }
+
+                loadSessionsList()
+            }
+        }
     }
 }

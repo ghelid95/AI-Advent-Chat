@@ -66,7 +66,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("AI Chat - ${viewModel.currentVendor.value.displayName}") },
+                    title = { Text("${viewModel.currentSessionName.value} - ${viewModel.currentVendor.value.displayName}") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = Color.White
@@ -116,12 +116,18 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 )
             }
         ) { padding ->
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
+                // Main content area
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
                 // Vendor Switcher
                 Row(
                     modifier = Modifier
@@ -354,6 +360,25 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                         )
                     }
                 }
+                }
+
+                // Session Sidebar on the right
+                SessionSidebar(
+                    sessions = viewModel.sessions,
+                    currentSessionId = viewModel.currentSessionId.value,
+                    onSessionClick = { sessionId ->
+                        viewModel.loadSession(sessionId)
+                    },
+                    onNewSession = {
+                        viewModel.createNewSession()
+                    },
+                    onDeleteSession = { sessionId ->
+                        viewModel.deleteSession(sessionId)
+                    },
+                    onRenameSession = { sessionId, newName ->
+                        viewModel.renameSession(sessionId, newName)
+                    }
+                )
             }
         }
 
