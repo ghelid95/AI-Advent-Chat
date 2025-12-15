@@ -18,22 +18,49 @@ import kotlin.system.measureTimeMillis
 private data class ChatRequest(
     val model: String,
     @SerialName("max_tokens") val maxTokens: Int = 1024,
-    val messages: List<ChatMessage>,
+    val messages: List<ClaudeApiMessage>,
     val system: String? = null,
-    val temperature: Float? = null
+    val temperature: Float? = null,
+    val tools: List<ClaudeTool>? = null
 )
+
+@Serializable
+private data class ClaudeApiMessage(
+    val role: String,
+    val content: ClaudeApiContent
+)
+
+@Serializable(with = ClaudeApiContentSerializer::class)
+sealed class ClaudeApiContent {
+    data class TextContent(val text: String) : ClaudeApiContent()
+    data class BlocksContent(val blocks: List<ContentBlock>) : ClaudeApiContent()
+}
+
+// Custom serializer for Claude API content (can be string or array of blocks)
+object ClaudeApiContentSerializer : kotlinx.serialization.KSerializer<ClaudeApiContent> {
+    override val descriptor = kotlinx.serialization.descriptors.buildClassSerialDescriptor("ClaudeApiContent")
+
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: ClaudeApiContent) {
+        when (value) {
+            is ClaudeApiContent.TextContent -> encoder.encodeString(value.text)
+            is ClaudeApiContent.BlocksContent -> encoder.encodeSerializableValue(
+                kotlinx.serialization.builtins.ListSerializer(ContentBlock.serializer()),
+                value.blocks
+            )
+        }
+    }
+
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): ClaudeApiContent {
+        throw NotImplementedError("Deserialization not needed for requests")
+    }
+}
 
 @Serializable
 private data class ChatResponse(
     val id: String? = null,
-    val content: List<Content>? = null,
+    val content: List<ContentBlock>? = null,
     val usage: Usage? = null,
-    @SerialName("stop_reason") val failReason: String? = null,
-)
-
-@Serializable
-private data class Content(
-    val text: String,
+    @SerialName("stop_reason") val stopReason: String? = null,
 )
 
 @Serializable
@@ -54,6 +81,7 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
                 ignoreUnknownKeys = true
                 prettyPrint = true
                 encodeDefaults = true
+                explicitNulls = false  // Don't serialize null fields
             })
         }
         install(Logging) {
@@ -104,13 +132,32 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
         return Triple(inputCost, outputCost, inputCost + outputCost)
     }
 
-    override suspend fun sendMessage(messages: List<ChatMessage>, systemPrompt: String, temperature: Float, model: String, maxTokens: Int): Result<LlmMessage> {
+    override fun supportsTools(): Boolean = true
+
+    override suspend fun sendMessage(
+        messages: List<ChatMessage>,
+        systemPrompt: String,
+        temperature: Float,
+        model: String,
+        maxTokens: Int,
+        tools: List<ClaudeTool>?
+    ): Result<LlmMessage> {
         return try {
             println("=== Sending request to Anthropic API ===")
             println("Message count: ${messages.size}")
             println("Temperature: $temperature")
             println("Model: $model")
             println("Max Tokens: $maxTokens")
+            println("Tools: ${tools?.size ?: 0}")
+
+            // Convert ChatMessage to ClaudeApiMessage
+            val claudeMessages = messages.map { msg ->
+                val content = when (msg.content) {
+                    is ChatMessageContent.Text -> ClaudeApiContent.TextContent(msg.content.text)
+                    is ChatMessageContent.ContentBlocks -> ClaudeApiContent.BlocksContent(msg.content.blocks)
+                }
+                ClaudeApiMessage(msg.role, content)
+            }
 
             var response: ChatResponse? = null
             val timeMs = measureTimeMillis {
@@ -118,14 +165,33 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
                     contentType(ContentType.Application.Json)
                     header("x-api-key", apiKey)
                     header("anthropic-version", "2023-06-01")
-                    setBody(ChatRequest(model = model, messages = messages, system = systemPrompt, temperature = temperature, maxTokens = maxTokens))
+                    setBody(ChatRequest(
+                        model = model,
+                        messages = claudeMessages,
+                        system = systemPrompt,
+                        temperature = temperature,
+                        maxTokens = maxTokens,
+                        tools = tools  // null fields are omitted due to explicitNulls = false
+                    ))
                 }.body()
             }
 
             println("=== Received response ===")
             println("Response ID: ${response?.id}")
-            println("Stop reason: ${response?.failReason}")
-            println("Content: ${response?.content?.firstOrNull()?.text?.take(100)}...")
+            println("Stop reason: ${response?.stopReason}")
+
+            // Extract text and tool_use blocks
+            val textBlocks = response?.content?.filterIsInstance<ContentBlock.Text>() ?: emptyList()
+            val toolUseBlocks = response?.content?.filterIsInstance<ContentBlock.ToolUse>() ?: emptyList()
+
+            println("Text blocks: ${textBlocks.size}")
+            println("Tool use blocks: ${toolUseBlocks.size}")
+            if (textBlocks.isNotEmpty()) {
+                println("Content: ${textBlocks.first().text.take(100)}...")
+            }
+            if (toolUseBlocks.isNotEmpty()) {
+                println("Tools requested: ${toolUseBlocks.joinToString(", ") { it.name }}")
+            }
             println("Request time: ${timeMs}ms")
 
             val inputTokens = response?.usage?.promptTokens ?: 0
@@ -133,11 +199,13 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
             val totalTokens = inputTokens + outputTokens
             val cost = calculateCost(model, inputTokens, outputTokens)
 
+            // Try to parse first text block as JSON for joke extraction, otherwise use plain text
+            val answerText = textBlocks.firstOrNull()?.text ?: ""
             val result = try {
-                DefaultJson.decodeFromString<LlmMessage>(response?.content?.firstOrNull()?.text!!)
+                DefaultJson.decodeFromString<LlmMessage>(answerText)
             } catch (e: Exception) {
                 LlmMessage(
-                    response?.content?.firstOrNull()?.text ?: response?.failReason ?: "No response",
+                    answer = answerText.ifEmpty { response?.stopReason ?: "No response" },
                     joke = null
                 )
             }
@@ -151,7 +219,9 @@ class ClaudeClient(private val apiKey: String) : ApiClient {
                     requestTimeMs = timeMs,
                     estimatedInputCost = cost.first,
                     estimatedOutputCost = cost.second,
-                )
+                ),
+                toolUses = toolUseBlocks.ifEmpty { null },
+                stopReason = response?.stopReason
             )
 
             Result.success(resultWithUsage)

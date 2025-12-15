@@ -11,10 +11,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -39,6 +41,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showJokeDialog by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showMcpSettingsDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
     val listState = rememberLazyListState()
 
@@ -102,6 +105,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showMcpSettingsDialog = true }) {
+                            Icon(
+                                Icons.Default.Extension,
+                                contentDescription = "MCP Servers",
                                 tint = Color.White
                             )
                         }
@@ -386,6 +396,17 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
             SettingsDialog(viewModel = viewModel, onDismiss = { showSettingsDialog = false })
         }
 
+        if (showMcpSettingsDialog) {
+            McpSettingsDialog(
+                servers = viewModel.appSettings.value.mcpServers,
+                onSave = { servers ->
+                    viewModel.updateMcpServers(servers)
+                    showMcpSettingsDialog = false
+                },
+                onDismiss = { showMcpSettingsDialog = false }
+            )
+        }
+
         if (showJokeDialog && viewModel.joke.value != null) {
             JokeDialog(
                 joke = viewModel.joke.value!!,
@@ -419,6 +440,8 @@ fun MessageBubble(message: Message, onExpand: (() -> Unit)? = null) {
     val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val time = dateFormat.format(Date(message.timestamp))
     val isCompactedPlaceholder = message.content.startsWith(">") && message.content.contains("compacted")
+    val isToolUse = message.content.startsWith("[Using tools:")
+    val isToolResult = message.content.startsWith("Tool '")
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -435,10 +458,12 @@ fun MessageBubble(message: Message, onExpand: (() -> Unit)? = null) {
                 bottomEnd = if (message.isUser) 4.dp else 12.dp
             ),
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isUser)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.surface
+                containerColor = when {
+                    message.isUser -> MaterialTheme.colorScheme.primary
+                    isToolUse -> Color(0xFF1E3A5F) // Dark blue for tool use
+                    isToolResult -> Color(0xFF2D4A2C) // Dark green for tool results
+                    else -> MaterialTheme.colorScheme.surface
+                }
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
@@ -462,11 +487,32 @@ fun MessageBubble(message: Message, onExpand: (() -> Unit)? = null) {
                         )
                     }
                 } else {
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (message.isUser) Color.White else Color.White
-                    )
+                    // Show tool icon for tool-related messages
+                    if (isToolUse || isToolResult) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                contentDescription = "Tool",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color.White
+                            )
+                            Text(
+                                text = message.content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White,
+                                fontFamily = if (isToolResult) androidx.compose.ui.text.font.FontFamily.Monospace else null
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = message.content,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (message.isUser) Color.White else Color.White
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(

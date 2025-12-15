@@ -59,3 +59,12 @@ compose.desktop {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Custom task to run MCP test client
+tasks.register<JavaExec>("testMcp") {
+    mainClass.set("test.McpClientTestKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    standardOutput = System.out
+    errorOutput = System.err
+}

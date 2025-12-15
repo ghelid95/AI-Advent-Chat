@@ -7,9 +7,13 @@ interface ApiClient {
         systemPrompt: String,
         temperature: Float,
         model: String,
-        maxTokens: Int
+        maxTokens: Int,
+        tools: List<ClaudeTool>? = null
     ): Result<LlmMessage>
     fun close()
+
+    // Check if this vendor supports tools
+    fun supportsTools(): Boolean
 }
 
 enum class Vendor(val displayName: String) {

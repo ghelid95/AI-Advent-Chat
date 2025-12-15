@@ -4,6 +4,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import data.*
+import data.mcp.McpServerManager
+import data.mcp.McpTool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,7 +46,15 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     val sessions = mutableStateListOf<SessionSummary>()
     private val sessionsListMutex = Mutex()
 
+    // MCP support
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val mcpServerManager = McpServerManager(scope)
+    private val appSettingsStorage = AppSettingsStorage()
+    val appSettings = mutableStateOf(AppSettings())
+    val availableTools = mutableStateListOf<Pair<String, McpTool>>()
+
+    // Store last tool_use blocks for sending with tool results
+    private var lastToolUseBlocks: List<ContentBlock.ToolUse>? = null
 
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
         return when (vendor) {
@@ -57,6 +67,20 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         loadModels()
         loadSessionsList()
         loadLastSession()
+        loadMcpServers()
+    }
+
+    private fun loadMcpServers() {
+        scope.launch {
+            appSettings.value = appSettingsStorage.loadSettings()
+            mcpServerManager.startServers(appSettings.value.mcpServers)
+            updateAvailableTools()
+        }
+    }
+
+    private fun updateAvailableTools() {
+        availableTools.clear()
+        availableTools.addAll(mcpServerManager.getAllTools())
     }
 
     private fun loadModels() {
@@ -159,55 +183,33 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 // Build API messages including compacted summaries
                 val chatMessages = buildAPIMessageList()
 
-                val result = client.sendMessage(chatMessages, systemPrompt.value, temperature.value, selectedModel.value, maxTokens.value)
+                // Build tools list if vendor supports tools
+                val tools = if (client.supportsTools() && availableTools.isNotEmpty()) {
+                    availableTools.map { (_, tool) ->
+                        ClaudeTool(
+                            name = tool.name,
+                            description = tool.description,
+                            inputSchema = tool.inputSchema
+                        )
+                    }
+                } else null
+
+                val result = client.sendMessage(
+                    chatMessages,
+                    systemPrompt.value,
+                    temperature.value,
+                    selectedModel.value,
+                    maxTokens.value,
+                    tools
+                )
 
                 result.onSuccess { response ->
-                    // Update the last user message with usage info
-                    response.usage?.let { usage ->
-                        val lastUserIndex = internalMessages.indexOfLast {
-                            it is InternalMessage.Regular && it.isUser
-                        }
-                        if (lastUserIndex != -1) {
-                            val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
-                            internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
-                        }
+                    // Check if tool use was requested
+                    if (response.stopReason == "tool_use" && !response.toolUses.isNullOrEmpty()) {
+                        handleToolUse(response)
+                    } else {
+                        handleTextResponse(response)
                     }
-
-                    // Add assistant response to internal storage
-                    val assistantMessage = InternalMessage.Regular(
-                        content = response.answer,
-                        isUser = false,
-                        usage = response.usage
-                    )
-                    internalMessages.add(assistantMessage)
-                    syncToUIMessages()
-
-                    joke.value = response.joke
-
-                    // Update session stats and last response time
-                    response.usage?.let { usage ->
-                        val currentStats = sessionStats.value
-                        sessionStats.value = SessionStats(
-                            totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
-                            totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
-                            totalCost = currentStats.totalCost + usage.estimatedCost,
-                            lastRequestTimeMs = usage.requestTimeMs
-                        )
-                        // Store current as previous before updating
-                        previousResponseTime.value = lastResponseTime.value
-                        lastResponseTime.value = usage.requestTimeMs
-                    }
-
-                    // Increment message counter (user + assistant = 2)
-                    messagesSinceLastCompaction.value += 2
-
-                    // Check if auto-compaction should trigger
-                    if (shouldTriggerAutoCompaction()) {
-                        performCompaction(auto = true)
-                    }
-
-                    // Auto-save session after successful message
-                    saveCurrentSession()
                 }.onFailure { error ->
                     errorMessage.value = "Error: ${error.message}"
                 }
@@ -216,6 +218,196 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             } finally {
                 isLoading.value = false
             }
+        }
+    }
+
+    private suspend fun handleToolUse(response: LlmMessage) {
+        // Update the last user message with usage info
+        response.usage?.let { usage ->
+            val lastUserIndex = internalMessages.indexOfLast {
+                it is InternalMessage.Regular && it.isUser
+            }
+            if (lastUserIndex != -1) {
+                val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
+                internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
+            }
+        }
+
+        // Store tool_use blocks for later use
+        lastToolUseBlocks = response.toolUses
+
+        // Add assistant message with tool_use indication (for UI display)
+        val toolNames = response.toolUses?.joinToString(", ") { it.name } ?: ""
+        val assistantMessage = InternalMessage.Regular(
+            content = "[Using tools: $toolNames]",
+            isUser = false,
+            usage = response.usage
+        )
+        internalMessages.add(assistantMessage)
+        syncToUIMessages()
+
+        // Execute each tool
+        val toolResults = mutableListOf<ContentBlock.ToolResult>()
+        response.toolUses?.forEach { toolUse ->
+            println("[MCP] Executing tool: ${toolUse.name}")
+
+            // Find which server has this tool
+            val serverToolPair = availableTools.find { it.second.name == toolUse.name }
+            if (serverToolPair != null) {
+                val (serverId, _) = serverToolPair
+
+                // Execute tool
+                val result = mcpServerManager.callTool(serverId, toolUse.name, toolUse.input)
+                result.onSuccess { mcpResult ->
+                    val content = mcpResult.content.joinToString("\n") { it.text ?: "" }
+                    toolResults.add(
+                        ContentBlock.ToolResult(
+                            toolUseId = toolUse.id,
+                            content = content,
+                            isError = mcpResult.isError
+                        )
+                    )
+
+                    // Add tool result to UI
+                    val toolResultMessage = InternalMessage.Regular(
+                        content = "Tool '${toolUse.name}' result:\n$content",
+                        isUser = false
+                    )
+                    internalMessages.add(toolResultMessage)
+                    syncToUIMessages()
+                }.onFailure { error ->
+                    println("[MCP] Tool execution failed: ${error.message}")
+                    toolResults.add(
+                        ContentBlock.ToolResult(
+                            toolUseId = toolUse.id,
+                            content = "Error: ${error.message}",
+                            isError = true
+                        )
+                    )
+
+                    // Add error to UI
+                    val errorMessage = InternalMessage.Regular(
+                        content = "Tool '${toolUse.name}' error: ${error.message}",
+                        isUser = false
+                    )
+                    internalMessages.add(errorMessage)
+                    syncToUIMessages()
+                }
+            } else {
+                println("[MCP] Tool not found: ${toolUse.name}")
+                toolResults.add(
+                    ContentBlock.ToolResult(
+                        toolUseId = toolUse.id,
+                        content = "Error: Tool not found",
+                        isError = true
+                    )
+                )
+            }
+        }
+
+        // Send tool results back to LLM for final response
+        if (toolResults.isNotEmpty()) {
+            sendMessageWithToolResults(toolResults)
+        }
+    }
+
+    private suspend fun sendMessageWithToolResults(toolResults: List<ContentBlock.ToolResult>) {
+        try {
+            // Build messages including the assistant's tool_use and user's tool_result
+            val chatMessages = buildAPIMessageList().toMutableList()
+
+            // Add assistant message with tool_use blocks
+            if (lastToolUseBlocks != null && lastToolUseBlocks!!.isNotEmpty()) {
+                chatMessages.add(ChatMessage(
+                    role = "assistant",
+                    content = ChatMessageContent.ContentBlocks(lastToolUseBlocks!!)
+                ))
+            }
+
+            // Add user message with tool_result blocks
+            chatMessages.add(ChatMessage(
+                role = "user",
+                content = ChatMessageContent.ContentBlocks(toolResults)
+            ))
+
+            val result = client.sendMessage(
+                chatMessages,
+                systemPrompt.value,
+                temperature.value,
+                selectedModel.value,
+                maxTokens.value,
+                null // No tools in follow-up request
+            )
+
+            result.onSuccess { response ->
+                // Clear stored tool_use blocks
+                lastToolUseBlocks = null
+                handleTextResponse(response)
+            }.onFailure { error ->
+                errorMessage.value = "Error: ${error.message}"
+                lastToolUseBlocks = null
+            }
+        } catch (e: Exception) {
+            errorMessage.value = "Error: ${e.message}"
+            lastToolUseBlocks = null
+        }
+    }
+
+    private suspend fun handleTextResponse(response: LlmMessage) {
+        // Update the last user message with usage info
+        response.usage?.let { usage ->
+            val lastUserIndex = internalMessages.indexOfLast {
+                it is InternalMessage.Regular && it.isUser
+            }
+            if (lastUserIndex != -1) {
+                val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
+                internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
+            }
+        }
+
+        // Add assistant response to internal storage
+        val assistantMessage = InternalMessage.Regular(
+            content = response.answer,
+            isUser = false,
+            usage = response.usage
+        )
+        internalMessages.add(assistantMessage)
+        syncToUIMessages()
+
+        joke.value = response.joke
+
+        // Update session stats and last response time
+        response.usage?.let { usage ->
+            val currentStats = sessionStats.value
+            sessionStats.value = SessionStats(
+                totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
+                totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
+                totalCost = currentStats.totalCost + usage.estimatedCost,
+                lastRequestTimeMs = usage.requestTimeMs
+            )
+            // Store current as previous before updating
+            previousResponseTime.value = lastResponseTime.value
+            lastResponseTime.value = usage.requestTimeMs
+        }
+
+        // Increment message counter (user + assistant = 2)
+        messagesSinceLastCompaction.value += 2
+
+        // Check if auto-compaction should trigger
+        if (shouldTriggerAutoCompaction()) {
+            performCompaction(auto = true)
+        }
+
+        // Auto-save session after successful message
+        saveCurrentSession()
+    }
+
+    fun updateMcpServers(newServers: List<data.mcp.McpServerConfig>) {
+        scope.launch {
+            appSettings.value = appSettings.value.copy(mcpServers = newServers)
+            appSettingsStorage.saveSettings(appSettings.value)
+            mcpServerManager.startServers(newServers)
+            updateAvailableTools()
         }
     }
 
@@ -434,6 +626,9 @@ Provide ONLY the summary text.
 
     fun cleanup() {
         saveCurrentSession() // Save before cleanup
+        scope.launch {
+            mcpServerManager.stopAll()
+        }
         client.close()
     }
 

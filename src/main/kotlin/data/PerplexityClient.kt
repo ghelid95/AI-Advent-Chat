@@ -88,13 +88,20 @@ class PerplexityClient(private val apiKey: String) : ApiClient {
         )
     })
 
+    override fun supportsTools(): Boolean = false
+
     override suspend fun sendMessage(
         messages: List<ChatMessage>,
         systemPrompt: String,
         temperature: Float,
         model: String,
-        maxTokens: Int
+        maxTokens: Int,
+        tools: List<ClaudeTool>?
     ): Result<LlmMessage> {
+        // Warn if tools are provided since Perplexity doesn't support them
+        if (tools != null && tools.isNotEmpty()) {
+            println("[Perplexity] Warning: Tools parameter provided but Perplexity API does not support tools")
+        }
         return try {
             println("=== Sending request to Perplexity API ===")
             println("Message count: ${messages.size}")
@@ -107,8 +114,21 @@ class PerplexityClient(private val apiKey: String) : ApiClient {
             if (systemPrompt.isNotBlank()) {
                 perplexityMessages.add(PerplexityMessage("system", systemPrompt))
             }
-            perplexityMessages.addAll(messages.map {
-                PerplexityMessage(it.role, it.content)
+            perplexityMessages.addAll(messages.map { msg ->
+                // Flatten content blocks to text
+                val text = when (msg.content) {
+                    is ChatMessageContent.Text -> msg.content.text
+                    is ChatMessageContent.ContentBlocks -> {
+                        msg.content.blocks.joinToString("\n") { block ->
+                            when (block) {
+                                is ContentBlock.Text -> block.text
+                                is ContentBlock.ToolUse -> "[Tool: ${block.name} with input ${block.input}]"
+                                is ContentBlock.ToolResult -> block.content
+                            }
+                        }
+                    }
+                }
+                PerplexityMessage(msg.role, text)
             })
 
             var response: PerplexityResponse? = null
