@@ -432,6 +432,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 }
             )
         }
+
+        if (viewModel.showTaskReminderDialog.value) {
+            TaskReminderDialog(
+                taskSummary = viewModel.taskReminderSummary.value,
+                onDismiss = { viewModel.dismissTaskReminderDialog() }
+            )
+        }
     }
 }
 

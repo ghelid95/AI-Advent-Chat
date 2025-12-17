@@ -8,6 +8,7 @@ import data.mcp.McpServerManager
 import data.mcp.McpTool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -56,6 +57,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     // Store last tool_use blocks for sending with tool results
     private var lastToolUseBlocks: List<ContentBlock.ToolUse>? = null
 
+    // Task reminder support
+    private var taskReminderManager: TaskReminderManager? = null
+    val showTaskReminderDialog = mutableStateOf(false)
+    val taskReminderSummary = mutableStateOf("")
+
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
         return when (vendor) {
             Vendor.ANTHROPIC -> ClaudeClient(apiKey)
@@ -75,7 +81,37 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             appSettings.value = appSettingsStorage.loadSettings()
             mcpServerManager.startServers(appSettings.value.mcpServers)
             updateAvailableTools()
+            initializeTaskReminder()
         }
+    }
+
+    private fun initializeTaskReminder() {
+        // Only initialize if client is ClaudeClient
+        if (client is ClaudeClient) {
+            taskReminderManager = TaskReminderManager(
+                client = client as ClaudeClient,
+                mcpServerManager = mcpServerManager,
+                scope = scope
+            )
+            taskReminderManager?.onTaskSummaryReceived = { summary ->
+                taskReminderSummary.value = summary
+                showTaskReminderDialog.value = true
+            }
+            // Start the reminder immediately
+            taskReminderManager?.startReminder(availableTools.toList())
+        }
+    }
+
+    fun stopTaskReminder() {
+        taskReminderManager?.stopReminder()
+    }
+
+    fun startTaskReminder() {
+        taskReminderManager?.startReminder(availableTools.toList())
+    }
+
+    fun dismissTaskReminderDialog() {
+        showTaskReminderDialog.value = false
     }
 
     private fun updateAvailableTools() {
@@ -626,6 +662,7 @@ Provide ONLY the summary text.
 
     fun cleanup() {
         saveCurrentSession() // Save before cleanup
+        taskReminderManager?.stopReminder() // Stop task reminder
         scope.launch {
             mcpServerManager.stopAll()
         }
