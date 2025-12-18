@@ -8,7 +8,9 @@ import java.io.File
 
 @Serializable
 data class AppSettings(
-    val mcpServers: List<McpServerConfig> = emptyList()
+    val mcpServers: List<McpServerConfig> = emptyList(),
+    val pipelineEnabled: Boolean = true,
+    val pipelineMaxIterations: Int = 5
 )
 
 class AppSettingsStorage {

@@ -567,6 +567,8 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var editedMaxTokens by remember { mutableStateOf(viewModel.maxTokens.value.toString()) }
     var editedModel by remember { mutableStateOf(viewModel.selectedModel.value) }
     var editedCompactionEnabled by remember { mutableStateOf(viewModel.compactionEnabled.value) }
+    var editedPipelineEnabled by remember { mutableStateOf(viewModel.pipelineEnabled.value) }
+    var editedPipelineMaxIterations by remember { mutableStateOf(viewModel.pipelineMaxIterations.value.toString()) }
     var expanded by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -576,7 +578,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(650.dp)
+                    .height(750.dp)
             ) {
                 Text(
                     "System Prompt",
@@ -741,6 +743,66 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     )
                 }
 
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Pipeline Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Enable MCP Pipeline Mode",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Allow multi-step tool execution chains",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = editedPipelineEnabled,
+                        onCheckedChange = { editedPipelineEnabled = it }
+                    )
+                }
+
+                // Pipeline Max Iterations (only show when pipeline is enabled)
+                if (editedPipelineEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Max Pipeline Iterations",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Maximum number of tool execution rounds (1-10)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editedPipelineMaxIterations,
+                        onValueChange = {
+                            if (it.all { char -> char.isDigit() } || it.isEmpty()) {
+                                val value = it.toIntOrNull() ?: 0
+                                if (value in 0..10 || it.isEmpty()) {
+                                    editedPipelineMaxIterations = it
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g., 5") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray
+                        ),
+                        singleLine = true
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Note: Changes apply immediately to your next message. You can optionally clear the chat for a fresh start.",
@@ -757,6 +819,11 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     viewModel.maxTokens.value = editedMaxTokens.toIntOrNull() ?: 4096
                     viewModel.selectedModel.value = editedModel
                     viewModel.compactionEnabled.value = editedCompactionEnabled
+
+                    // Save pipeline settings
+                    val maxIterations = editedPipelineMaxIterations.toIntOrNull()?.coerceIn(1, 10) ?: 5
+                    viewModel.updatePipelineSettings(editedPipelineEnabled, maxIterations)
+
                     onDismiss()
                 }
             ) {

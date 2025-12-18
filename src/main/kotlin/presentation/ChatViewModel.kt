@@ -57,6 +57,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     // Store last tool_use blocks for sending with tool results
     private var lastToolUseBlocks: List<ContentBlock.ToolUse>? = null
 
+    // Pipeline support
+    val pipelineEnabled = mutableStateOf(true)
+    val pipelineMaxIterations = mutableStateOf(5)
+    private var mcpPipeline: McpPipeline? = null
+
     // Task reminder support
     private var taskReminderManager: TaskReminderManager? = null
     val showTaskReminderDialog = mutableStateOf(false)
@@ -81,7 +86,12 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             appSettings.value = appSettingsStorage.loadSettings()
             mcpServerManager.startServers(appSettings.value.mcpServers)
             updateAvailableTools()
-            initializeTaskReminder()
+
+            // Load pipeline settings
+            pipelineEnabled.value = appSettings.value.pipelineEnabled
+            pipelineMaxIterations.value = appSettings.value.pipelineMaxIterations
+
+//            initializeTaskReminder()
         }
     }
 
@@ -216,45 +226,167 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         scope.launch {
             try {
-                // Build API messages including compacted summaries
-                val chatMessages = buildAPIMessageList()
-
-                // Build tools list if vendor supports tools
-                val tools = if (client.supportsTools() && availableTools.isNotEmpty()) {
-                    availableTools.map { (_, tool) ->
-                        ClaudeTool(
-                            name = tool.name,
-                            description = tool.description,
-                            inputSchema = tool.inputSchema
-                        )
-                    }
-                } else null
-
-                val result = client.sendMessage(
-                    chatMessages,
-                    systemPrompt.value,
-                    temperature.value,
-                    selectedModel.value,
-                    maxTokens.value,
-                    tools
-                )
-
-                result.onSuccess { response ->
-                    // Check if tool use was requested
-                    if (response.stopReason == "tool_use" && !response.toolUses.isNullOrEmpty()) {
-                        handleToolUse(response)
-                    } else {
-                        handleTextResponse(response)
-                    }
-                }.onFailure { error ->
-                    errorMessage.value = "Error: ${error.message}"
+                // Check if pipeline mode is enabled and tools are available
+                if (pipelineEnabled.value && client.supportsTools() && availableTools.isNotEmpty()) {
+                    executePipeline(content)
+                } else {
+                    executeSingleRound(content)
                 }
             } catch (e: Exception) {
                 errorMessage.value = "Error: ${e.message}"
-            } finally {
                 isLoading.value = false
             }
         }
+    }
+
+    private suspend fun executeSingleRound(content: String) {
+        try {
+            // Build API messages including compacted summaries
+            val chatMessages = buildAPIMessageList()
+
+            // Build tools list if vendor supports tools
+            val tools = if (client.supportsTools() && availableTools.isNotEmpty()) {
+                availableTools.map { (_, tool) ->
+                    ClaudeTool(
+                        name = tool.name,
+                        description = tool.description,
+                        inputSchema = tool.inputSchema
+                    )
+                }
+            } else null
+
+            val result = client.sendMessage(
+                chatMessages,
+                systemPrompt.value,
+                temperature.value,
+                selectedModel.value,
+                maxTokens.value,
+                tools
+            )
+
+            result.onSuccess { response ->
+                // Check if tool use was requested
+                if (response.stopReason == "tool_use" && !response.toolUses.isNullOrEmpty()) {
+                    handleToolUse(response)
+                } else {
+                    handleTextResponse(response)
+                }
+            }.onFailure { error ->
+                errorMessage.value = "Error: ${error.message}"
+            }
+        } catch (e: Exception) {
+            errorMessage.value = "Error: ${e.message}"
+        } finally {
+            isLoading.value = false
+        }
+    }
+
+    private suspend fun executePipeline(content: String) {
+        try {
+            // Initialize pipeline if needed
+            if (mcpPipeline == null) {
+                mcpPipeline = McpPipeline(
+                    client = client,
+                    mcpServerManager = mcpServerManager,
+                    maxIterations = pipelineMaxIterations.value
+                )
+            }
+
+            // Build context from current conversation (excluding the just-added user message)
+            val context = buildAPIMessageList().dropLast(1)
+
+            // Execute pipeline
+            val result = mcpPipeline!!.execute(
+                initialPrompt = content,
+                context = context,
+                systemPrompt = systemPrompt.value,
+                temperature = temperature.value,
+                model = selectedModel.value,
+                maxTokens = maxTokens.value,
+                availableTools = availableTools.toList()
+            )
+
+            result.onSuccess { pipelineResult ->
+                handlePipelineResult(pipelineResult)
+            }.onFailure { error ->
+                errorMessage.value = "Pipeline error: ${error.message}"
+            }
+        } catch (e: Exception) {
+            errorMessage.value = "Pipeline error: ${e.message}"
+        } finally {
+            isLoading.value = false
+        }
+    }
+
+    private suspend fun handlePipelineResult(result: PipelineResult) {
+        // Update the last user message with total usage info
+        val lastUserIndex = internalMessages.indexOfLast {
+            it is InternalMessage.Regular && it.isUser
+        }
+        if (lastUserIndex != -1) {
+            val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
+            internalMessages[lastUserIndex] = lastUser.copy(usage = result.totalUsage)
+        }
+
+        // Add tool execution details to UI
+        if (result.toolExecutions.isNotEmpty()) {
+            val toolSummary = buildString {
+                appendLine("[Pipeline executed ${result.iterations} iteration(s)]")
+                appendLine("[Total tool calls: ${result.totalToolCalls}]")
+                appendLine("[Tools used: ${result.uniqueToolsUsed.joinToString(", ")}]")
+                appendLine()
+                result.toolExecutions.forEach { execution ->
+                    appendLine("Iteration ${execution.iteration} - Tool: ${execution.toolName}")
+                    if (execution.isError) {
+                        appendLine("  Error: ${execution.output}")
+                    } else {
+                        appendLine("  Result: ${execution.output.take(200)}${if (execution.output.length > 200) "..." else ""}")
+                    }
+                }
+            }
+            val pipelineMessage = InternalMessage.Regular(
+                content = toolSummary,
+                isUser = false
+            )
+            internalMessages.add(pipelineMessage)
+            syncToUIMessages()
+        }
+
+        // Add final response
+        val assistantMessage = InternalMessage.Regular(
+            content = result.finalResponse,
+            isUser = false,
+            usage = result.totalUsage
+        )
+        internalMessages.add(assistantMessage)
+        syncToUIMessages()
+
+        // Update session stats
+        val currentStats = sessionStats.value
+        sessionStats.value = SessionStats(
+            totalInputTokens = currentStats.totalInputTokens + result.totalUsage.inputTokens,
+            totalOutputTokens = currentStats.totalOutputTokens + result.totalUsage.outputTokens,
+            totalCost = currentStats.totalCost + result.totalUsage.estimatedCost,
+            lastRequestTimeMs = result.totalUsage.requestTimeMs
+        )
+
+        // Store current as previous before updating
+        previousResponseTime.value = lastResponseTime.value
+        lastResponseTime.value = result.totalUsage.requestTimeMs
+
+        // Increment message counter
+        messagesSinceLastCompaction.value += 2
+
+        // Check if auto-compaction should trigger
+        if (shouldTriggerAutoCompaction()) {
+            performCompaction(auto = true)
+        }
+
+        // Auto-save session after successful message
+        saveCurrentSession()
+
+        // Print pipeline summary to console
+        println(result.getSummary())
     }
 
     private suspend fun handleToolUse(response: LlmMessage) {
@@ -444,6 +576,25 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             appSettingsStorage.saveSettings(appSettings.value)
             mcpServerManager.startServers(newServers)
             updateAvailableTools()
+        }
+    }
+
+    fun updatePipelineSettings(enabled: Boolean, maxIterations: Int) {
+        pipelineEnabled.value = enabled
+        pipelineMaxIterations.value = maxIterations
+
+        // Reset pipeline instance when settings change
+        if (mcpPipeline != null) {
+            mcpPipeline = null
+        }
+
+        // Save to persistent storage
+        scope.launch {
+            appSettings.value = appSettings.value.copy(
+                pipelineEnabled = enabled,
+                pipelineMaxIterations = maxIterations
+            )
+            appSettingsStorage.saveSettings(appSettings.value)
         }
     }
 
