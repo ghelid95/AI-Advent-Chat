@@ -251,17 +251,25 @@ class McpServerManager(private val scope: CoroutineScope) {
         servers.values.forEach { it.stop() }
         servers.clear()
 
-        // Start new servers
-        configs.filter { it.enabled }.forEach { config ->
+        // Start new servers and wait for all to complete initialization
+        val jobs = configs.filter { it.enabled }.map { config ->
             val server = McpServer(config, scope)
             servers[config.id] = server
-            scope.launch {
+            scope.async {
                 server.start()
             }
         }
 
-        // Give servers time to initialize
-        delay(1000)
+        // Wait for all servers to finish initialization
+        jobs.forEach { job ->
+            try {
+                job.await()
+            } catch (e: Exception) {
+                println("[MCP] Server initialization failed: ${e.message}")
+            }
+        }
+
+        println("[MCP] All servers initialized. Ready servers: ${getReadyServers().size}")
     }
 
     // Get all ready servers

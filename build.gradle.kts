@@ -68,3 +68,12 @@ tasks.register<JavaExec>("testMcp") {
     standardOutput = System.out
     errorOutput = System.err
 }
+
+// Custom task to run MCP Shell Command Server
+tasks.register<JavaExec>("runMcpShellServer") {
+    mainClass.set("mcp.ShellCommandMcpServerKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    standardOutput = System.out
+    errorOutput = System.err
+}
