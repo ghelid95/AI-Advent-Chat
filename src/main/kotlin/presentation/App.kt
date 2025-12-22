@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Extension
@@ -42,6 +43,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showJokeDialog by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showMcpSettingsDialog by remember { mutableStateOf(false) }
+    var showEmbeddingsDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
     val listState = rememberLazyListState()
 
@@ -112,6 +114,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             Icon(
                                 Icons.Default.Extension,
                                 contentDescription = "MCP Servers",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showEmbeddingsDialog = true }) {
+                            Icon(
+                                Icons.Default.DataObject,
+                                contentDescription = "Embeddings",
                                 tint = Color.White
                             )
                         }
@@ -414,6 +423,12 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                     showJokeDialog = false
                     viewModel.joke.value = null
                 }
+            )
+        }
+
+        if (showEmbeddingsDialog) {
+            EmbeddingsDialog(
+                onDismiss = { showEmbeddingsDialog = false }
             )
         }
 
