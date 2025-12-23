@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -28,9 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import data.EmbeddingStorage
 import data.Vendor
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -584,7 +588,13 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var editedCompactionEnabled by remember { mutableStateOf(viewModel.compactionEnabled.value) }
     var editedPipelineEnabled by remember { mutableStateOf(viewModel.pipelineEnabled.value) }
     var editedPipelineMaxIterations by remember { mutableStateOf(viewModel.pipelineMaxIterations.value.toString()) }
+    var editedEmbeddingsEnabled by remember { mutableStateOf(viewModel.embeddingsEnabled.value) }
+    var editedSelectedEmbedding by remember { mutableStateOf(viewModel.selectedEmbeddingFile.value) }
+    var editedEmbeddingTopK by remember { mutableStateOf(viewModel.embeddingTopK.value.toString()) }
+    var editedEmbeddingThreshold by remember { mutableStateOf(viewModel.embeddingThreshold.value.toString()) }
     var expanded by remember { mutableStateOf(false) }
+    var embeddingExpanded by remember { mutableStateOf(false) }
+    val availableEmbeddings = remember { EmbeddingStorage.listEmbeddingFiles() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -594,6 +604,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(750.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     "System Prompt",
@@ -818,6 +829,147 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     )
                 }
 
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Embeddings Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Enable Embeddings (RAG)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Use embeddings to provide relevant context",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = editedEmbeddingsEnabled,
+                        onCheckedChange = { editedEmbeddingsEnabled = it }
+                    )
+                }
+
+                // Embedding Settings (only show when embeddings are enabled)
+                if (editedEmbeddingsEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Select Embedding",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (availableEmbeddings.isEmpty()) {
+                        Text(
+                            "No embeddings found. Create one using the Embeddings dialog.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    } else {
+                        ExposedDropdownMenuBox(
+                            expanded = embeddingExpanded,
+                            onExpandedChange = { embeddingExpanded = !embeddingExpanded }
+                        ) {
+                            val selectedEmbeddingName = editedSelectedEmbedding?.let { File(it).nameWithoutExtension } ?: "None"
+
+                            OutlinedTextField(
+                                value = selectedEmbeddingName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = embeddingExpanded)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = Color.Gray
+                                )
+                            )
+                            ExposedDropdownMenu(
+                                expanded = embeddingExpanded,
+                                onDismissRequest = { embeddingExpanded = false }
+                            ) {
+                                availableEmbeddings.forEach { file ->
+                                    DropdownMenuItem(
+                                        text = { Text(file.nameWithoutExtension) },
+                                        onClick = {
+                                            editedSelectedEmbedding = file.absolutePath
+                                            embeddingExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Top K Results",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Number of relevant chunks to retrieve (1-10)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editedEmbeddingTopK,
+                        onValueChange = {
+                            if (it.all { char -> char.isDigit() } || it.isEmpty()) {
+                                val value = it.toIntOrNull() ?: 0
+                                if (value in 0..10 || it.isEmpty()) {
+                                    editedEmbeddingTopK = it
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g., 3") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray
+                        ),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Similarity Threshold",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Minimum similarity score (0.0-1.0)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editedEmbeddingThreshold,
+                        onValueChange = {
+                            if (it.isEmpty() || it.matches(Regex("^0?(\\.\\d{0,2})?$|^1(\\.0{0,2})?$"))) {
+                                editedEmbeddingThreshold = it
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("e.g., 0.5") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray
+                        ),
+                        singleLine = true
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Note: Changes apply immediately to your next message. You can optionally clear the chat for a fresh start.",
@@ -838,6 +990,11 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     // Save pipeline settings
                     val maxIterations = editedPipelineMaxIterations.toIntOrNull()?.coerceIn(1, 10) ?: 5
                     viewModel.updatePipelineSettings(editedPipelineEnabled, maxIterations)
+
+                    // Save embedding settings
+                    val topK = editedEmbeddingTopK.toIntOrNull()?.coerceIn(1, 10) ?: 3
+                    val threshold = editedEmbeddingThreshold.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.5f
+                    viewModel.updateEmbeddingSettings(editedEmbeddingsEnabled, editedSelectedEmbedding, topK, threshold)
 
                     onDismiss()
                 }

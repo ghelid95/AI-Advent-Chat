@@ -10,7 +10,11 @@ import java.io.File
 data class AppSettings(
     val mcpServers: List<McpServerConfig> = emptyList(),
     val pipelineEnabled: Boolean = true,
-    val pipelineMaxIterations: Int = 5
+    val pipelineMaxIterations: Int = 5,
+    val embeddingsEnabled: Boolean = false,
+    val selectedEmbeddingFile: String? = null,
+    val embeddingTopK: Int = 3,
+    val embeddingThreshold: Float = 0.5f
 )
 
 class AppSettingsStorage {
@@ -70,7 +74,11 @@ class AppSettingsStorage {
         return AppSettings(
             mcpServers = listOf(shellCommandServer),
             pipelineEnabled = true,
-            pipelineMaxIterations = 5
+            pipelineMaxIterations = 5,
+            embeddingsEnabled = false,
+            selectedEmbeddingFile = null,
+            embeddingTopK = 3,
+            embeddingThreshold = 0.5f
         )
     }
 

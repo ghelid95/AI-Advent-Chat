@@ -62,6 +62,13 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     val pipelineMaxIterations = mutableStateOf(5)
     private var mcpPipeline: McpPipeline? = null
 
+    // Embeddings support
+    val embeddingsEnabled = mutableStateOf(false)
+    val selectedEmbeddingFile = mutableStateOf<String?>(null)
+    val embeddingTopK = mutableStateOf(3)
+    val embeddingThreshold = mutableStateOf(0.5f)
+    private var ollamaClient: OllamaClient? = null
+
     // Task reminder support
     private var taskReminderManager: TaskReminderManager? = null
     val showTaskReminderDialog = mutableStateOf(false)
@@ -90,6 +97,17 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             // Load pipeline settings
             pipelineEnabled.value = appSettings.value.pipelineEnabled
             pipelineMaxIterations.value = appSettings.value.pipelineMaxIterations
+
+            // Load embedding settings
+            embeddingsEnabled.value = appSettings.value.embeddingsEnabled
+            selectedEmbeddingFile.value = appSettings.value.selectedEmbeddingFile
+            embeddingTopK.value = appSettings.value.embeddingTopK
+            embeddingThreshold.value = appSettings.value.embeddingThreshold
+
+            // Initialize Ollama client if embeddings enabled
+            if (embeddingsEnabled.value) {
+                ollamaClient = OllamaClient()
+            }
 
 //            initializeTaskReminder()
         }
@@ -210,27 +228,65 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                internalMessages.filterIsInstance<InternalMessage.Regular>().size >= 10
     }
 
+    private suspend fun enrichMessageWithEmbeddings(content: String): String {
+        if (!embeddingsEnabled.value || selectedEmbeddingFile.value == null || ollamaClient == null) {
+            return content
+        }
+
+        try {
+            val embeddingFile = java.io.File(selectedEmbeddingFile.value!!)
+            if (!embeddingFile.exists()) {
+                println("[Embeddings] Embedding file not found: ${embeddingFile.absolutePath}")
+                return content
+            }
+
+            println("[Embeddings] Searching for relevant context...")
+            val searchResults = EmbeddingSearch.searchSimilarChunks(
+                query = content,
+                embeddingFile = embeddingFile,
+                ollamaClient = ollamaClient!!,
+                topK = embeddingTopK.value,
+                threshold = embeddingThreshold.value
+            )
+
+            if (searchResults.isEmpty()) {
+                println("[Embeddings] No relevant chunks found above threshold")
+                return content
+            }
+
+            val contextString = EmbeddingSearch.formatSearchResultsAsContext(searchResults)
+            return "$contextString\n\nUser Query: $content"
+        } catch (e: Exception) {
+            println("[Embeddings] Error during search: ${e.message}")
+            e.printStackTrace()
+            return content
+        }
+    }
+
     fun sendMessage(content: String) {
         if (content.isBlank()) return
-
-        // Add user message to internal storage
-        val userMessage = InternalMessage.Regular(
-            content = content,
-            isUser = true
-        )
-        internalMessages.add(userMessage)
-        syncToUIMessages()
 
         isLoading.value = true
         errorMessage.value = null
 
         scope.launch {
             try {
+                // Enrich message with embeddings if enabled
+                val enrichedContent = enrichMessageWithEmbeddings(content)
+
+                // Add enriched user message to internal storage
+                val userMessage = InternalMessage.Regular(
+                    content = enrichedContent,
+                    isUser = true
+                )
+                internalMessages.add(userMessage)
+                syncToUIMessages()
+
                 // Check if pipeline mode is enabled and tools are available
                 if (pipelineEnabled.value && client.supportsTools() && availableTools.isNotEmpty()) {
-                    executePipeline(content)
+                    executePipeline(enrichedContent)
                 } else {
-                    executeSingleRound(content)
+                    executeSingleRound(enrichedContent)
                 }
             } catch (e: Exception) {
                 errorMessage.value = "Error: ${e.message}"
@@ -593,6 +649,32 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             appSettings.value = appSettings.value.copy(
                 pipelineEnabled = enabled,
                 pipelineMaxIterations = maxIterations
+            )
+            appSettingsStorage.saveSettings(appSettings.value)
+        }
+    }
+
+    fun updateEmbeddingSettings(enabled: Boolean, embeddingFile: String?, topK: Int, threshold: Float) {
+        embeddingsEnabled.value = enabled
+        selectedEmbeddingFile.value = embeddingFile
+        embeddingTopK.value = topK
+        embeddingThreshold.value = threshold
+
+        // Initialize or close Ollama client based on enabled state
+        if (enabled && ollamaClient == null) {
+            ollamaClient = OllamaClient()
+        } else if (!enabled && ollamaClient != null) {
+            ollamaClient?.close()
+            ollamaClient = null
+        }
+
+        // Save to persistent storage
+        scope.launch {
+            appSettings.value = appSettings.value.copy(
+                embeddingsEnabled = enabled,
+                selectedEmbeddingFile = embeddingFile,
+                embeddingTopK = topK,
+                embeddingThreshold = threshold
             )
             appSettingsStorage.saveSettings(appSettings.value)
         }
