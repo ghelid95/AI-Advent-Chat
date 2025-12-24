@@ -246,7 +246,9 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 embeddingFile = embeddingFile,
                 ollamaClient = ollamaClient!!,
                 topK = embeddingTopK.value,
-                threshold = embeddingThreshold.value
+                threshold = embeddingThreshold.value,
+                useMmr = true,  // Enable MMR for diverse results
+                mmrLambda = 0.0f // Balance between relevance (1.0) and diversity (0.0)
             )
 
             if (searchResults.isEmpty()) {
