@@ -257,7 +257,16 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             }
 
             val contextString = EmbeddingSearch.formatSearchResultsAsContext(searchResults)
-            return "$contextString\n\nUser Query: $content"
+            val instruction = """
+                |
+                |IMPORTANT: When answering the user's query below, you MUST:
+                |1. Use the retrieved context above to inform your answer
+                |2. Clearly indicate which source(s) you used (e.g., "Based on context from [source name]...")
+                |3. Reference specific chunk numbers when citing information
+                |4. If the context doesn't contain relevant information, state this clearly
+                |
+                """.trimMargin()
+            return "$contextString$instruction\nUser Query: $content"
         } catch (e: Exception) {
             println("[Embeddings] Error during search: ${e.message}")
             e.printStackTrace()

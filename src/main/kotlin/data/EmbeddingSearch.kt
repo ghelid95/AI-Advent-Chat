@@ -223,7 +223,11 @@ object EmbeddingSearch {
             appendLine("=== Retrieved Context ===")
             appendLine()
             results.forEachIndexed { index, result ->
-                appendLine("Context ${index + 1} (similarity: ${"%.3f".format(result.similarity)}):")
+                appendLine("Context ${index + 1}:")
+                appendLine("  Source: ${result.embeddingFileName}")
+                appendLine("  Chunk: ${result.chunk.index + 1} (characters ${result.chunk.startChar}-${result.chunk.endChar})")
+                appendLine("  Similarity: ${"%.3f".format(result.similarity)}")
+                appendLine("  Content:")
                 appendLine(result.chunk.text)
                 appendLine()
             }
