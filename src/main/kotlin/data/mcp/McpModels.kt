@@ -20,14 +20,14 @@ data class McpServerConfig(
 @Serializable
 data class JsonRpcRequest(
     val jsonrpc: String = "2.0",
-    val id: Int,
+    val id: Int? = null,
     val method: String,
     val params: JsonObject? = null
 )
 
 @Serializable
 data class JsonRpcResponse(
-    val jsonrpc: String,
+    val jsonrpc: String = "2.0",
     val id: Int? = null,
     val result: JsonElement? = null,
     val error: JsonRpcError? = null

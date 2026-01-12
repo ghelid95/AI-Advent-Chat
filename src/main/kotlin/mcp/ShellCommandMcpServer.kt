@@ -1,5 +1,15 @@
 package mcp
 
+import data.mcp.JsonRpcRequest
+import data.mcp.JsonRpcResponse
+import data.mcp.JsonRpcError
+import data.mcp.McpServerInfo
+import data.mcp.McpServerCapabilities
+import data.mcp.McpInitializeResult
+import data.mcp.McpTool
+import data.mcp.McpToolListResult
+import data.mcp.McpToolContent
+import data.mcp.McpToolCallResult
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import java.io.File
@@ -9,72 +19,6 @@ import java.util.concurrent.TimeUnit
  * MCP Server for Shell Command Execution
  * Provides command line access tools for LLM client
  */
-
-// JSON-RPC Models
-@Serializable
-data class JsonRpcRequest(
-    val jsonrpc: String = "2.0",
-    val id: Int? = null,
-    val method: String,
-    val params: JsonObject? = null
-)
-
-@Serializable
-data class JsonRpcResponse(
-    val jsonrpc: String = "2.0",
-    val id: Int? = null,
-    val result: JsonElement? = null,
-    val error: JsonRpcError? = null
-)
-
-@Serializable
-data class JsonRpcError(
-    val code: Int,
-    val message: String
-)
-
-// MCP Protocol Models
-@Serializable
-data class McpServerInfo(
-    val name: String,
-    val version: String
-)
-
-@Serializable
-data class McpCapabilities(
-    val tools: JsonObject = buildJsonObject { }
-)
-
-@Serializable
-data class McpInitializeResult(
-    val protocolVersion: String = "2024-11-05",
-    val serverInfo: McpServerInfo,
-    val capabilities: McpCapabilities
-)
-
-@Serializable
-data class McpTool(
-    val name: String,
-    val description: String? = null,
-    val inputSchema: JsonObject
-)
-
-@Serializable
-data class McpToolListResult(
-    val tools: List<McpTool>
-)
-
-@Serializable
-data class McpToolContent(
-    val type: String,
-    val text: String? = null
-)
-
-@Serializable
-data class McpToolCallResult(
-    val content: List<McpToolContent>,
-    @SerialName("isError") val isError: Boolean = false
-)
 
 class ShellCommandMcpServer {
     private val json = Json {
@@ -88,7 +32,7 @@ class ShellCommandMcpServer {
         version = "1.0.0"
     )
 
-    private val capabilities = McpCapabilities()
+    private val capabilities = McpServerCapabilities()
 
     private fun log(message: String) {
         System.err.println("[ShellCommandMcpServer] $message")
@@ -113,6 +57,7 @@ class ShellCommandMcpServer {
     private fun handleInitialize(requestId: Int?, params: JsonObject?): JsonRpcResponse {
         log("Handling initialize with params: $params")
         val result = McpInitializeResult(
+            protocolVersion = "2024-11-05",
             serverInfo = serverInfo,
             capabilities = capabilities
         )

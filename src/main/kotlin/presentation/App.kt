@@ -57,8 +57,8 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
         }
     }
 
-    LaunchedEffect(viewModel.joke.value) {
-        viewModel.joke.value?.let {
+    LaunchedEffect(viewModel.uiState.value.joke) {
+        viewModel.uiState.value.joke?.let {
             showJokeDialog = true
         }
     }
@@ -75,7 +75,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("${viewModel.currentSessionName.value} - ${viewModel.currentVendor.value.displayName}") },
+                    title = { Text("${viewModel.uiState.value.currentSessionName} - ${viewModel.uiState.value.currentVendor.displayName}") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         titleContentColor = Color.White
@@ -161,17 +161,17 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                     Vendor.entries.forEach { vendor ->
                         Button(
                             onClick = {
-                                if (viewModel.currentVendor.value != vendor) {
+                                if (viewModel.uiState.value.currentVendor != vendor) {
                                     pendingVendor = vendor
                                     showApiKeyDialog = true
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (viewModel.currentVendor.value == vendor)
+                                containerColor = if (viewModel.uiState.value.currentVendor == vendor)
                                     MaterialTheme.colorScheme.primary
                                 else
                                     Color.Gray,
-                                contentColor = if (viewModel.currentVendor.value == vendor)
+                                contentColor = if (viewModel.uiState.value.currentVendor == vendor)
                                     Color.White
                                 else
                                     Color.Black
@@ -183,7 +183,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 }
 
                 // Usage Stats
-                val stats = viewModel.sessionStats.value
+                val stats = viewModel.uiState.value.sessionStats
                 if (stats.totalTokens > 0) {
                     Card(
                         modifier = Modifier
@@ -222,7 +222,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                                 )
                                 if (stats.lastRequestTimeMs > 0) {
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    val previousTime = viewModel.previousResponseTime.value
+                                    val previousTime = viewModel.uiState.value.previousResponseTime
                                     val currentTime = stats.lastRequestTimeMs
                                     val comparisonText = if (previousTime != null && previousTime > 0) {
                                         if (currentTime > previousTime) {
@@ -288,7 +288,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                         )
                     }
 
-                    if (viewModel.isLoading.value) {
+                    if (viewModel.uiState.value.isLoading) {
                         item {
                             Box(
                                 modifier = Modifier
@@ -303,7 +303,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 }
 
                 // Error Message
-                viewModel.errorMessage.value?.let { error ->
+                viewModel.uiState.value.errorMessage?.let { error ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -321,7 +321,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 }
 
                 val captureMessage =  {
-                    if (inputText.isNotBlank() && !viewModel.isLoading.value && !viewModel.isCompacting.value) {
+                    if (inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting) {
                         viewModel.sendMessage(inputText)
                         inputText = ""
                     }
@@ -340,11 +340,11 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                         modifier = Modifier.weight(1f),
                         placeholder = {
                             Text(
-                                if (viewModel.isCompacting.value) "Compacting messages..."
+                                if (viewModel.uiState.value.isCompacting) "Compacting messages..."
                                 else "Type your message..."
                             )
                         },
-                        enabled = !viewModel.isLoading.value && !viewModel.isCompacting.value,
+                        enabled = !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -366,11 +366,11 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                         onClick = {
                             captureMessage()
                         },
-                        enabled = inputText.isNotBlank() && !viewModel.isLoading.value && !viewModel.isCompacting.value,
+                        enabled = inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
                         modifier = Modifier
                             .size(56.dp)
                             .background(
-                                if (inputText.isNotBlank() && !viewModel.isLoading.value && !viewModel.isCompacting.value)
+                                if (inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting)
                                     MaterialTheme.colorScheme.primary
                                 else Color.Gray,
                                 shape = RoundedCornerShape(28.dp)
@@ -388,7 +388,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 // Session Sidebar on the right
                 SessionSidebar(
                     sessions = viewModel.sessions,
-                    currentSessionId = viewModel.currentSessionId.value,
+                    currentSessionId = viewModel.uiState.value.currentSessionId,
                     onSessionClick = { sessionId ->
                         viewModel.loadSession(sessionId)
                     },
@@ -411,7 +411,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
 
         if (showMcpSettingsDialog) {
             McpSettingsDialog(
-                servers = viewModel.appSettings.value.mcpServers,
+                servers = viewModel.uiState.value.appSettings.mcpServers,
                 onSave = { servers ->
                     viewModel.updateMcpServers(servers)
                     showMcpSettingsDialog = false
@@ -420,12 +420,12 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
             )
         }
 
-        if (showJokeDialog && viewModel.joke.value != null) {
+        if (showJokeDialog && viewModel.uiState.value.joke != null) {
             JokeDialog(
-                joke = viewModel.joke.value!!,
+                joke = viewModel.uiState.value.joke!!,
                 onDismiss = {
                     showJokeDialog = false
-                    viewModel.joke.value = null
+                    viewModel.clearJoke()
                 }
             )
         }
@@ -452,9 +452,9 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
             )
         }
 
-        if (viewModel.showTaskReminderDialog.value) {
+        if (viewModel.uiState.value.showTaskReminderDialog) {
             TaskReminderDialog(
-                taskSummary = viewModel.taskReminderSummary.value,
+                taskSummary = viewModel.uiState.value.taskReminderSummary,
                 onDismiss = { viewModel.dismissTaskReminderDialog() }
             )
         }
@@ -581,17 +581,17 @@ fun MessageBubble(message: Message, onExpand: (() -> Unit)? = null) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
-    var editedPrompt by remember { mutableStateOf(viewModel.systemPrompt.value) }
-    var editedTemperature by remember { mutableStateOf(viewModel.temperature.value) }
-    var editedMaxTokens by remember { mutableStateOf(viewModel.maxTokens.value.toString()) }
-    var editedModel by remember { mutableStateOf(viewModel.selectedModel.value) }
-    var editedCompactionEnabled by remember { mutableStateOf(viewModel.compactionEnabled.value) }
-    var editedPipelineEnabled by remember { mutableStateOf(viewModel.pipelineEnabled.value) }
-    var editedPipelineMaxIterations by remember { mutableStateOf(viewModel.pipelineMaxIterations.value.toString()) }
-    var editedEmbeddingsEnabled by remember { mutableStateOf(viewModel.embeddingsEnabled.value) }
-    var editedSelectedEmbedding by remember { mutableStateOf(viewModel.selectedEmbeddingFile.value) }
-    var editedEmbeddingTopK by remember { mutableStateOf(viewModel.embeddingTopK.value.toString()) }
-    var editedEmbeddingThreshold by remember { mutableStateOf(viewModel.embeddingThreshold.value.toString()) }
+    var editedPrompt by remember { mutableStateOf(viewModel.uiState.value.systemPrompt) }
+    var editedTemperature by remember { mutableStateOf(viewModel.uiState.value.temperature) }
+    var editedMaxTokens by remember { mutableStateOf(viewModel.uiState.value.maxTokens.toString()) }
+    var editedModel by remember { mutableStateOf(viewModel.uiState.value.selectedModel) }
+    var editedCompactionEnabled by remember { mutableStateOf(viewModel.uiState.value.compactionEnabled) }
+    var editedPipelineEnabled by remember { mutableStateOf(viewModel.uiState.value.pipelineEnabled) }
+    var editedPipelineMaxIterations by remember { mutableStateOf(viewModel.uiState.value.pipelineMaxIterations.toString()) }
+    var editedEmbeddingsEnabled by remember { mutableStateOf(viewModel.uiState.value.embeddingsEnabled) }
+    var editedSelectedEmbedding by remember { mutableStateOf(viewModel.uiState.value.selectedEmbeddingFile) }
+    var editedEmbeddingTopK by remember { mutableStateOf(viewModel.uiState.value.embeddingTopK.toString()) }
+    var editedEmbeddingThreshold by remember { mutableStateOf(viewModel.uiState.value.embeddingThreshold.toString()) }
     var expanded by remember { mutableStateOf(false) }
     var embeddingExpanded by remember { mutableStateOf(false) }
     val availableEmbeddings = remember { EmbeddingStorage.listEmbeddingFiles() }
@@ -682,7 +682,7 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (viewModel.isLoadingModels.value) {
+                if (viewModel.uiState.value.isLoadingModels) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -981,11 +981,13 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(
                 onClick = {
-                    viewModel.systemPrompt.value = editedPrompt
-                    viewModel.temperature.value = editedTemperature
-                    viewModel.maxTokens.value = editedMaxTokens.toIntOrNull() ?: 4096
-                    viewModel.selectedModel.value = editedModel
-                    viewModel.compactionEnabled.value = editedCompactionEnabled
+                    viewModel.updateSettingsFields(
+                        systemPrompt = editedPrompt,
+                        temperature = editedTemperature,
+                        maxTokens = editedMaxTokens.toIntOrNull() ?: 4096,
+                        selectedModel = editedModel,
+                        compactionEnabled = editedCompactionEnabled
+                    )
 
                     // Save pipeline settings
                     val maxIterations = editedPipelineMaxIterations.toIntOrNull()?.coerceIn(1, 10) ?: 5

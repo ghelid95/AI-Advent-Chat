@@ -14,65 +14,78 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
+/**
+ * Unified state for the Chat UI
+ */
+data class ChatUiState(
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val joke: String? = null,
+    val systemPrompt: String = "",
+    val temperature: Float = 0.1f,
+    val maxTokens: Int = 1024,
+    val selectedModel: String = "claude-sonnet-4-20250514",
+    val isLoadingModels: Boolean = true,
+    val currentVendor: Vendor = Vendor.ANTHROPIC,
+    val sessionStats: SessionStats = SessionStats(),
+    val lastResponseTime: Long? = null,
+    val previousResponseTime: Long? = null,
+    val compactionEnabled: Boolean = false,
+    val messagesSinceLastCompaction: Int = 0,
+    val isCompacting: Boolean = false,
+    val currentSessionId: String? = null,
+    val currentSessionName: String = "New Session",
+    val appSettings: AppSettings = AppSettings(),
+    val pipelineEnabled: Boolean = true,
+    val pipelineMaxIterations: Int = 5,
+    val embeddingsEnabled: Boolean = false,
+    val selectedEmbeddingFile: String? = null,
+    val embeddingTopK: Int = 3,
+    val embeddingThreshold: Float = 0.5f,
+    val showTaskReminderDialog: Boolean = false,
+    val taskReminderSummary: String = ""
+)
+
 class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private var client: ApiClient = createClient(vendor, apiKey)
     private var currentApiKey = apiKey
 
-    val messages = mutableStateListOf<Message>()
-    val isLoading = mutableStateOf(false)
-    val errorMessage = mutableStateOf<String?>(null)
-    val joke = mutableStateOf<String?>(null)
-    val systemPrompt = mutableStateOf("")
-    val temperature = mutableStateOf(0.1f)
-    val maxTokens = mutableStateOf(1024)
-    val selectedModel = mutableStateOf("claude-sonnet-4-20250514")
-    val availableModels = mutableStateListOf<Model>()
-    val isLoadingModels = mutableStateOf(true)
-    val currentVendor = mutableStateOf(vendor)
-    val sessionStats = mutableStateOf(SessionStats())
-    val lastResponseTime = mutableStateOf<Long?>(null)
-    val previousResponseTime = mutableStateOf<Long?>(null)
+    // Unified state
+    val uiState = mutableStateOf(ChatUiState(currentVendor = vendor))
 
-    // Compaction settings and state
-    val compactionEnabled = mutableStateOf(false)
-    val messagesSinceLastCompaction = mutableStateOf(0)
-    val isCompacting = mutableStateOf(false)
+    // Helper function to update state immutably
+    private fun updateState(block: ChatUiState.() -> ChatUiState) {
+        uiState.value = block(uiState.value)
+    }
+
+    // Lists remain separate for performance
+    val messages = mutableStateListOf<Message>()
+    val availableModels = mutableStateListOf<Model>()
+    val sessions = mutableStateListOf<SessionSummary>()
+    val availableTools = mutableStateListOf<Pair<String, McpTool>>()
     private val internalMessages = mutableStateListOf<InternalMessage>()
     private val summaryExpansionState = mutableStateMapOf<Long, Boolean>()
 
     // Session management
     private val sessionStorage = SessionStorage()
-    val currentSessionId = mutableStateOf<String?>(null)
-    val currentSessionName = mutableStateOf("New Session")
-    val sessions = mutableStateListOf<SessionSummary>()
     private val sessionsListMutex = Mutex()
 
     // MCP support
     private val scope = CoroutineScope(Dispatchers.IO)
     private val mcpServerManager = McpServerManager(scope)
     private val appSettingsStorage = AppSettingsStorage()
-    val appSettings = mutableStateOf(AppSettings())
-    val availableTools = mutableStateListOf<Pair<String, McpTool>>()
 
     // Store last tool_use blocks for sending with tool results
     private var lastToolUseBlocks: List<ContentBlock.ToolUse>? = null
 
     // Pipeline support
-    val pipelineEnabled = mutableStateOf(true)
-    val pipelineMaxIterations = mutableStateOf(5)
     private var mcpPipeline: McpPipeline? = null
 
     // Embeddings support
-    val embeddingsEnabled = mutableStateOf(false)
-    val selectedEmbeddingFile = mutableStateOf<String?>(null)
-    val embeddingTopK = mutableStateOf(3)
-    val embeddingThreshold = mutableStateOf(0.5f)
     private var ollamaClient: OllamaClient? = null
 
     // Task reminder support
     private var taskReminderManager: TaskReminderManager? = null
-    val showTaskReminderDialog = mutableStateOf(false)
-    val taskReminderSummary = mutableStateOf("")
 
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
         return when (vendor) {
@@ -90,22 +103,25 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     private fun loadMcpServers() {
         scope.launch {
-            appSettings.value = appSettingsStorage.loadSettings()
-            mcpServerManager.startServers(appSettings.value.mcpServers)
+            val settings = appSettingsStorage.loadSettings()
+            updateState { copy(appSettings = settings) }
+            mcpServerManager.startServers(uiState.value.appSettings.mcpServers)
             updateAvailableTools()
 
             // Load pipeline settings
-            pipelineEnabled.value = appSettings.value.pipelineEnabled
-            pipelineMaxIterations.value = appSettings.value.pipelineMaxIterations
-
-            // Load embedding settings
-            embeddingsEnabled.value = appSettings.value.embeddingsEnabled
-            selectedEmbeddingFile.value = appSettings.value.selectedEmbeddingFile
-            embeddingTopK.value = appSettings.value.embeddingTopK
-            embeddingThreshold.value = appSettings.value.embeddingThreshold
+            updateState {
+                copy(
+                    pipelineEnabled = uiState.value.appSettings.pipelineEnabled,
+                    pipelineMaxIterations = uiState.value.appSettings.pipelineMaxIterations,
+                    embeddingsEnabled = uiState.value.appSettings.embeddingsEnabled,
+                    selectedEmbeddingFile = uiState.value.appSettings.selectedEmbeddingFile,
+                    embeddingTopK = uiState.value.appSettings.embeddingTopK,
+                    embeddingThreshold = uiState.value.appSettings.embeddingThreshold
+                )
+            }
 
             // Initialize Ollama client if embeddings enabled
-            if (embeddingsEnabled.value) {
+            if (uiState.value.embeddingsEnabled) {
                 ollamaClient = OllamaClient()
             }
 
@@ -122,8 +138,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 scope = scope
             )
             taskReminderManager?.onTaskSummaryReceived = { summary ->
-                taskReminderSummary.value = summary
-                showTaskReminderDialog.value = true
+                updateState { copy(taskReminderSummary = summary, showTaskReminderDialog = true) }
             }
             // Start the reminder immediately
             taskReminderManager?.startReminder(availableTools.toList())
@@ -139,7 +154,29 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     }
 
     fun dismissTaskReminderDialog() {
-        showTaskReminderDialog.value = false
+        updateState { copy(showTaskReminderDialog = false) }
+    }
+
+    fun clearJoke() {
+        updateState { copy(joke = null) }
+    }
+
+    fun updateSettingsFields(
+        systemPrompt: String,
+        temperature: Float,
+        maxTokens: Int,
+        selectedModel: String,
+        compactionEnabled: Boolean
+    ) {
+        updateState {
+            copy(
+                systemPrompt = systemPrompt,
+                temperature = temperature,
+                maxTokens = maxTokens,
+                selectedModel = selectedModel,
+                compactionEnabled = compactionEnabled
+            )
+        }
     }
 
     private fun updateAvailableTools() {
@@ -161,7 +198,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             } catch (e: Exception) {
                 println("Exception loading models: ${e.message}")
             } finally {
-                isLoadingModels.value = false
+                updateState { copy(isLoadingModels = false) }
             }
         }
     }
@@ -212,7 +249,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 )
                 is InternalMessage.CompactedSummary -> ChatMessage(
                     // Claude uses "assistant" for summaries, Perplexity needs "system"
-                    role = when (currentVendor.value) {
+                    role = when (uiState.value.currentVendor) {
                         Vendor.ANTHROPIC -> "assistant"
                         Vendor.PERPLEXITY -> "system"
                     },
@@ -223,18 +260,18 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     }
 
     private fun shouldTriggerAutoCompaction(): Boolean {
-        return compactionEnabled.value &&
-               messagesSinceLastCompaction.value >= 10 &&
+        return uiState.value.compactionEnabled &&
+               uiState.value.messagesSinceLastCompaction >= 10 &&
                internalMessages.filterIsInstance<InternalMessage.Regular>().size >= 10
     }
 
     private suspend fun enrichMessageWithEmbeddings(content: String): String {
-        if (!embeddingsEnabled.value || selectedEmbeddingFile.value == null || ollamaClient == null) {
+        if (!uiState.value.embeddingsEnabled || uiState.value.selectedEmbeddingFile == null || ollamaClient == null) {
             return content
         }
 
         try {
-            val embeddingFile = java.io.File(selectedEmbeddingFile.value!!)
+            val embeddingFile = java.io.File(uiState.value.selectedEmbeddingFile!!)
             if (!embeddingFile.exists()) {
                 println("[Embeddings] Embedding file not found: ${embeddingFile.absolutePath}")
                 return content
@@ -245,8 +282,8 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 query = content,
                 embeddingFile = embeddingFile,
                 ollamaClient = ollamaClient!!,
-                topK = embeddingTopK.value,
-                threshold = embeddingThreshold.value,
+                topK = uiState.value.embeddingTopK,
+                threshold = uiState.value.embeddingThreshold,
                 useMmr = true,  // Enable MMR for diverse results
                 mmrLambda = 0.0f // Balance between relevance (1.0) and diversity (0.0)
             )
@@ -277,8 +314,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     fun sendMessage(content: String) {
         if (content.isBlank()) return
 
-        isLoading.value = true
-        errorMessage.value = null
+        updateState { copy(isLoading = true, errorMessage = null) }
 
         scope.launch {
             try {
@@ -294,19 +330,18 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 syncToUIMessages()
 
                 // Check if pipeline mode is enabled and tools are available
-                if (pipelineEnabled.value && client.supportsTools() && availableTools.isNotEmpty()) {
+                if (uiState.value.pipelineEnabled && client.supportsTools() && availableTools.isNotEmpty()) {
                     executePipeline(enrichedContent)
                 } else {
-                    executeSingleRound(enrichedContent)
+                    executeSingleRound()
                 }
             } catch (e: Exception) {
-                errorMessage.value = "Error: ${e.message}"
-                isLoading.value = false
+                updateState { copy(errorMessage = "Error: ${e.message}", isLoading = false) }
             }
         }
     }
 
-    private suspend fun executeSingleRound(content: String) {
+    private suspend fun executeSingleRound() {
         try {
             // Build API messages including compacted summaries
             val chatMessages = buildAPIMessageList()
@@ -324,10 +359,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
             val result = client.sendMessage(
                 chatMessages,
-                systemPrompt.value,
-                temperature.value,
-                selectedModel.value,
-                maxTokens.value,
+                uiState.value.systemPrompt,
+                uiState.value.temperature,
+                uiState.value.selectedModel,
+                uiState.value.maxTokens,
                 tools
             )
 
@@ -339,12 +374,12 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     handleTextResponse(response)
                 }
             }.onFailure { error ->
-                errorMessage.value = "Error: ${error.message}"
+                updateState { copy(errorMessage = "Error: ${error.message}") }
             }
         } catch (e: Exception) {
-            errorMessage.value = "Error: ${e.message}"
+            updateState { copy(errorMessage = "Error: ${e.message}") }
         } finally {
-            isLoading.value = false
+            updateState { copy(isLoading = false) }
         }
     }
 
@@ -355,7 +390,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 mcpPipeline = McpPipeline(
                     client = client,
                     mcpServerManager = mcpServerManager,
-                    maxIterations = pipelineMaxIterations.value
+                    maxIterations = uiState.value.pipelineMaxIterations
                 )
             }
 
@@ -366,22 +401,22 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             val result = mcpPipeline!!.execute(
                 initialPrompt = content,
                 context = context,
-                systemPrompt = systemPrompt.value,
-                temperature = temperature.value,
-                model = selectedModel.value,
-                maxTokens = maxTokens.value,
+                systemPrompt = uiState.value.systemPrompt,
+                temperature = uiState.value.temperature,
+                model = uiState.value.selectedModel,
+                maxTokens = uiState.value.maxTokens,
                 availableTools = availableTools.toList()
             )
 
             result.onSuccess { pipelineResult ->
                 handlePipelineResult(pipelineResult)
             }.onFailure { error ->
-                errorMessage.value = "Pipeline error: ${error.message}"
+                updateState { copy(errorMessage = "Pipeline error: ${error.message}") }
             }
         } catch (e: Exception) {
-            errorMessage.value = "Pipeline error: ${e.message}"
+            updateState { copy(errorMessage = "Pipeline error: ${e.message}") }
         } finally {
-            isLoading.value = false
+            updateState { copy(isLoading = false) }
         }
     }
 
@@ -429,20 +464,20 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         syncToUIMessages()
 
         // Update session stats
-        val currentStats = sessionStats.value
-        sessionStats.value = SessionStats(
-            totalInputTokens = currentStats.totalInputTokens + result.totalUsage.inputTokens,
-            totalOutputTokens = currentStats.totalOutputTokens + result.totalUsage.outputTokens,
-            totalCost = currentStats.totalCost + result.totalUsage.estimatedCost,
-            lastRequestTimeMs = result.totalUsage.requestTimeMs
-        )
-
-        // Store current as previous before updating
-        previousResponseTime.value = lastResponseTime.value
-        lastResponseTime.value = result.totalUsage.requestTimeMs
-
-        // Increment message counter
-        messagesSinceLastCompaction.value += 2
+        val currentStats = uiState.value.sessionStats
+        updateState {
+            copy(
+                sessionStats = SessionStats(
+                    totalInputTokens = currentStats.totalInputTokens + result.totalUsage.inputTokens,
+                    totalOutputTokens = currentStats.totalOutputTokens + result.totalUsage.outputTokens,
+                    totalCost = currentStats.totalCost + result.totalUsage.estimatedCost,
+                    lastRequestTimeMs = result.totalUsage.requestTimeMs
+                ),
+                previousResponseTime = uiState.value.lastResponseTime,
+                lastResponseTime = result.totalUsage.requestTimeMs,
+                messagesSinceLastCompaction = uiState.value.messagesSinceLastCompaction + 2
+            )
+        }
 
         // Check if auto-compaction should trigger
         if (shouldTriggerAutoCompaction()) {
@@ -567,10 +602,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
             val result = client.sendMessage(
                 chatMessages,
-                systemPrompt.value,
-                temperature.value,
-                selectedModel.value,
-                maxTokens.value,
+                uiState.value.systemPrompt,
+                uiState.value.temperature,
+                uiState.value.selectedModel,
+                uiState.value.maxTokens,
                 null // No tools in follow-up request
             )
 
@@ -579,11 +614,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 lastToolUseBlocks = null
                 handleTextResponse(response)
             }.onFailure { error ->
-                errorMessage.value = "Error: ${error.message}"
+                updateState { copy(errorMessage = "Error: ${error.message}") }
                 lastToolUseBlocks = null
             }
         } catch (e: Exception) {
-            errorMessage.value = "Error: ${e.message}"
+            updateState { copy(errorMessage = "Error: ${e.message}") }
             lastToolUseBlocks = null
         }
     }
@@ -609,24 +644,25 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         internalMessages.add(assistantMessage)
         syncToUIMessages()
 
-        joke.value = response.joke
+        updateState { copy(joke = response.joke) }
 
         // Update session stats and last response time
         response.usage?.let { usage ->
-            val currentStats = sessionStats.value
-            sessionStats.value = SessionStats(
-                totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
-                totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
-                totalCost = currentStats.totalCost + usage.estimatedCost,
-                lastRequestTimeMs = usage.requestTimeMs
-            )
-            // Store current as previous before updating
-            previousResponseTime.value = lastResponseTime.value
-            lastResponseTime.value = usage.requestTimeMs
+            val currentStats = uiState.value.sessionStats
+            updateState {
+                copy(
+                    sessionStats = SessionStats(
+                        totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
+                        totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
+                        totalCost = currentStats.totalCost + usage.estimatedCost,
+                        lastRequestTimeMs = usage.requestTimeMs
+                    ),
+                    previousResponseTime = uiState.value.lastResponseTime,
+                    lastResponseTime = usage.requestTimeMs,
+                    messagesSinceLastCompaction = uiState.value.messagesSinceLastCompaction + 2
+                )
+            }
         }
-
-        // Increment message counter (user + assistant = 2)
-        messagesSinceLastCompaction.value += 2
 
         // Check if auto-compaction should trigger
         if (shouldTriggerAutoCompaction()) {
@@ -639,16 +675,21 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     fun updateMcpServers(newServers: List<data.mcp.McpServerConfig>) {
         scope.launch {
-            appSettings.value = appSettings.value.copy(mcpServers = newServers)
-            appSettingsStorage.saveSettings(appSettings.value)
+            val newSettings = uiState.value.appSettings.copy(mcpServers = newServers)
+            updateState { copy(appSettings = newSettings) }
+            appSettingsStorage.saveSettings(newSettings)
             mcpServerManager.startServers(newServers)
             updateAvailableTools()
         }
     }
 
     fun updatePipelineSettings(enabled: Boolean, maxIterations: Int) {
-        pipelineEnabled.value = enabled
-        pipelineMaxIterations.value = maxIterations
+        updateState {
+            copy(
+                pipelineEnabled = enabled,
+                pipelineMaxIterations = maxIterations
+            )
+        }
 
         // Reset pipeline instance when settings change
         if (mcpPipeline != null) {
@@ -657,19 +698,24 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         // Save to persistent storage
         scope.launch {
-            appSettings.value = appSettings.value.copy(
+            val newSettings = uiState.value.appSettings.copy(
                 pipelineEnabled = enabled,
                 pipelineMaxIterations = maxIterations
             )
-            appSettingsStorage.saveSettings(appSettings.value)
+            updateState { copy(appSettings = newSettings) }
+            appSettingsStorage.saveSettings(newSettings)
         }
     }
 
     fun updateEmbeddingSettings(enabled: Boolean, embeddingFile: String?, topK: Int, threshold: Float) {
-        embeddingsEnabled.value = enabled
-        selectedEmbeddingFile.value = embeddingFile
-        embeddingTopK.value = topK
-        embeddingThreshold.value = threshold
+        updateState {
+            copy(
+                embeddingsEnabled = enabled,
+                selectedEmbeddingFile = embeddingFile,
+                embeddingTopK = topK,
+                embeddingThreshold = threshold
+            )
+        }
 
         // Initialize or close Ollama client based on enabled state
         if (enabled && ollamaClient == null) {
@@ -681,13 +727,14 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         // Save to persistent storage
         scope.launch {
-            appSettings.value = appSettings.value.copy(
+            val newSettings = uiState.value.appSettings.copy(
                 embeddingsEnabled = enabled,
                 selectedEmbeddingFile = embeddingFile,
                 embeddingTopK = topK,
                 embeddingThreshold = threshold
             )
-            appSettingsStorage.saveSettings(appSettings.value)
+            updateState { copy(appSettings = newSettings) }
+            appSettingsStorage.saveSettings(newSettings)
         }
     }
 
@@ -729,7 +776,7 @@ Provide ONLY the summary text.
                 messages = chatMessages,
                 systemPrompt = "You are a helpful assistant that creates concise, accurate summaries.",
                 temperature = 0.3f,
-                model = selectedModel.value,
+                model = uiState.value.selectedModel,
                 maxTokens = 1024
             )
 
@@ -777,14 +824,14 @@ Provide ONLY the summary text.
     }
 
     suspend fun performCompaction(auto: Boolean = false) {
-        if (isCompacting.value) return
+        if (uiState.value.isCompacting) return
 
         try {
-            isCompacting.value = true
+            updateState { copy(isCompacting = true) }
 
             val messagesToCompact = selectMessagesForCompaction(auto)
             if (messagesToCompact.isEmpty()) {
-                if (!auto) errorMessage.value = "Not enough messages to compact"
+                if (!auto) updateState { copy(errorMessage = "Not enough messages to compact") }
                 return
             }
 
@@ -808,28 +855,32 @@ Provide ONLY the summary text.
                 if (firstIndex != -1 && lastIndex != -1) {
                     repeat(lastIndex - firstIndex + 1) { internalMessages.removeAt(firstIndex) }
                     internalMessages.add(firstIndex, compactedSummary)
-                    messagesSinceLastCompaction.value = 0
+                    updateState { copy(messagesSinceLastCompaction = 0) }
                     syncToUIMessages()
                 }
 
                 // Add compaction request usage to session stats
                 compactionResult.usage?.let { usage ->
-                    val currentStats = sessionStats.value
-                    sessionStats.value = SessionStats(
-                        totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
-                        totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
-                        totalCost = currentStats.totalCost + usage.estimatedCost,
-                        lastRequestTimeMs = currentStats.lastRequestTimeMs
-                    )
+                    val currentStats = uiState.value.sessionStats
+                    updateState {
+                        copy(
+                            sessionStats = SessionStats(
+                                totalInputTokens = currentStats.totalInputTokens + usage.inputTokens,
+                                totalOutputTokens = currentStats.totalOutputTokens + usage.outputTokens,
+                                totalCost = currentStats.totalCost + usage.estimatedCost,
+                                lastRequestTimeMs = currentStats.lastRequestTimeMs
+                            )
+                        )
+                    }
                 }
 
                 // Auto-save session after compaction
                 saveCurrentSession()
             }.onFailure { error ->
-                errorMessage.value = "Compaction failed: ${error.message}"
+                updateState { copy(errorMessage = "Compaction failed: ${error.message}") }
             }
         } finally {
-            isCompacting.value = false
+            updateState { copy(isCompacting = false) }
         }
     }
 
@@ -839,7 +890,7 @@ Provide ONLY the summary text.
 
     fun canCompact(): Boolean {
         val regularCount = internalMessages.filterIsInstance<InternalMessage.Regular>().size
-        return regularCount > 4 && !isCompacting.value && !isLoading.value
+        return regularCount > 4 && !uiState.value.isCompacting && !uiState.value.isLoading
     }
 
     fun toggleSummaryExpansion(timestamp: Long) {
@@ -849,14 +900,18 @@ Provide ONLY the summary text.
     }
 
     fun clearChat() {
-        val currentId = currentSessionId.value
+        val currentId = uiState.value.currentSessionId
 
         messages.clear()
         internalMessages.clear()
         summaryExpansionState.clear()
-        messagesSinceLastCompaction.value = 0
-        errorMessage.value = null
-        sessionStats.value = SessionStats()
+        updateState {
+            copy(
+                messagesSinceLastCompaction = 0,
+                errorMessage = null,
+                sessionStats = SessionStats()
+            )
+        }
 
         // Delete the current session file instead of saving empty state
         if (currentId != null) {
@@ -879,26 +934,30 @@ Provide ONLY the summary text.
         client.close()
 
         // Create new client
-        currentVendor.value = vendor
         currentApiKey = apiKey
         client = createClient(vendor, apiKey)
 
         // Reset models
         availableModels.clear()
-        isLoadingModels.value = true
 
-        // Set appropriate default model
-        selectedModel.value = when (vendor) {
+        // Set appropriate default model and update state
+        val defaultModel = when (vendor) {
             Vendor.ANTHROPIC -> "claude-sonnet-4-20250514"
             Vendor.PERPLEXITY -> "sonar"
         }
 
+        updateState {
+            copy(
+                currentVendor = vendor,
+                isLoadingModels = true,
+                selectedModel = defaultModel,
+                lastResponseTime = null,
+                previousResponseTime = null
+            )
+        }
+
         // Load new models
         loadModels()
-
-        // Reset last response time when switching vendors
-        lastResponseTime.value = null
-        previousResponseTime.value = null
 
         // Create new session with the new vendor
         createNewSession("New ${vendor.displayName} Session")
@@ -952,12 +1011,12 @@ Provide ONLY the summary text.
                 createdAt = timestamp,
                 lastModified = timestamp,
                 settings = SessionSettings(
-                    vendor = currentVendor.value,
-                    selectedModel = selectedModel.value,
-                    systemPrompt = systemPrompt.value,
-                    temperature = temperature.value,
-                    maxTokens = maxTokens.value,
-                    compactionEnabled = compactionEnabled.value
+                    vendor = uiState.value.currentVendor,
+                    selectedModel = uiState.value.selectedModel,
+                    systemPrompt = uiState.value.systemPrompt,
+                    temperature = uiState.value.temperature,
+                    maxTokens = uiState.value.maxTokens,
+                    compactionEnabled = uiState.value.compactionEnabled
                 ),
                 messages = emptyList(),
                 sessionStats = SessionStats()
@@ -965,16 +1024,20 @@ Provide ONLY the summary text.
 
             sessionStorage.saveSession(newSession)
 
-            currentSessionId.value = sessionId
-            currentSessionName.value = name
+            updateState {
+                copy(
+                    currentSessionId = sessionId,
+                    currentSessionName = name,
+                    messagesSinceLastCompaction = 0,
+                    errorMessage = null,
+                    sessionStats = SessionStats()
+                )
+            }
 
             // Clear current chat
             internalMessages.clear()
             messages.clear()
             summaryExpansionState.clear()
-            messagesSinceLastCompaction.value = 0
-            errorMessage.value = null
-            sessionStats.value = SessionStats()
 
             loadSessionsList()
         }
@@ -985,7 +1048,7 @@ Provide ONLY the summary text.
             val session = sessionStorage.loadSession(sessionId)
             if (session != null) {
                 // Switch vendor if needed (without clearing chat)
-                if (currentVendor.value != session.settings.vendor) {
+                if (uiState.value.currentVendor != session.settings.vendor) {
                     client.close()
                     currentApiKey = when (session.settings.vendor) {
                         Vendor.ANTHROPIC -> System.getenv("CLAUDE_API_KEY") ?: ""
@@ -993,28 +1056,29 @@ Provide ONLY the summary text.
                     }
                     client = createClient(session.settings.vendor, currentApiKey)
                     availableModels.clear()
-                    isLoadingModels.value = true
+                    updateState { copy(isLoadingModels = true) }
                     loadModels()
                 }
+
                 // Restore settings
-                currentVendor.value = session.settings.vendor
-                selectedModel.value = session.settings.selectedModel
-                systemPrompt.value = session.settings.systemPrompt
-                temperature.value = session.settings.temperature
-                maxTokens.value = session.settings.maxTokens
-                compactionEnabled.value = session.settings.compactionEnabled
+                updateState {
+                    copy(
+                        currentVendor = session.settings.vendor,
+                        selectedModel = session.settings.selectedModel,
+                        systemPrompt = session.settings.systemPrompt,
+                        temperature = session.settings.temperature,
+                        maxTokens = session.settings.maxTokens,
+                        compactionEnabled = session.settings.compactionEnabled,
+                        sessionStats = session.sessionStats,
+                        currentSessionId = session.id,
+                        currentSessionName = session.name
+                    )
+                }
 
                 // Restore messages
                 internalMessages.clear()
                 internalMessages.addAll(session.messages.map { it.toInternal() })
                 syncToUIMessages()
-
-                // Restore session stats
-                sessionStats.value = session.sessionStats
-
-                // Update current session
-                currentSessionId.value = session.id
-                currentSessionName.value = session.name
 
 
             }
@@ -1022,18 +1086,18 @@ Provide ONLY the summary text.
     }
 
     fun saveCurrentSession() {
-        val sessionId = currentSessionId.value ?: return
+        val sessionId = uiState.value.currentSessionId ?: return
 
         // Capture current values BEFORE launching coroutine to avoid race conditions
-        val capturedVendor = currentVendor.value
-        val capturedModel = selectedModel.value
-        val capturedSystemPrompt = systemPrompt.value
-        val capturedTemperature = temperature.value
-        val capturedMaxTokens = maxTokens.value
-        val capturedCompactionEnabled = compactionEnabled.value
-        val capturedSessionName = currentSessionName.value
+        val capturedVendor = uiState.value.currentVendor
+        val capturedModel = uiState.value.selectedModel
+        val capturedSystemPrompt = uiState.value.systemPrompt
+        val capturedTemperature = uiState.value.temperature
+        val capturedMaxTokens = uiState.value.maxTokens
+        val capturedCompactionEnabled = uiState.value.compactionEnabled
+        val capturedSessionName = uiState.value.currentSessionName
         val capturedMessages = internalMessages.map { it.toSerializable() }
-        val capturedStats = sessionStats.value
+        val capturedStats = uiState.value.sessionStats
 
         scope.launch {
             val session = SessionData(
@@ -1065,7 +1129,7 @@ Provide ONLY the summary text.
                 loadSessionsList()
 
                 // If we deleted the current session, create a new one
-                if (currentSessionId.value == sessionId) {
+                if (uiState.value.currentSessionId == sessionId) {
                     createNewSession()
                 }
             }
@@ -1082,8 +1146,8 @@ Provide ONLY the summary text.
                 )
                 sessionStorage.saveSession(updatedSession)
 
-                if (currentSessionId.value == sessionId) {
-                    currentSessionName.value = newName
+                if (uiState.value.currentSessionId == sessionId) {
+                    updateState { copy(currentSessionName = newName) }
                 }
 
                 loadSessionsList()
