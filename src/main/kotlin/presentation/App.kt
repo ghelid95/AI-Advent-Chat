@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DataObject
@@ -48,6 +49,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showMcpSettingsDialog by remember { mutableStateOf(false) }
     var showEmbeddingsDialog by remember { mutableStateOf(false) }
+    var showAssistantSettingsDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
     val listState = rememberLazyListState()
 
@@ -125,6 +127,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             Icon(
                                 Icons.Default.DataObject,
                                 contentDescription = "Embeddings",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showAssistantSettingsDialog = true }) {
+                            Icon(
+                                Icons.Default.Code,
+                                contentDescription = "Code Assistant",
                                 tint = Color.White
                             )
                         }
@@ -320,6 +329,25 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                     }
                 }
 
+                // Command Status Warning
+                if (!viewModel.uiState.value.codeAssistantEnabled || viewModel.uiState.value.codeAssistantWorkingDir.isNullOrBlank()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFF9800)
+                        )
+                    ) {
+                        Text(
+                            text = "Code Assistant not configured. Commands require a working directory.",
+                            modifier = Modifier.padding(12.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
                 val captureMessage =  {
                     if (inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting) {
                         viewModel.sendMessage(inputText)
@@ -341,7 +369,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                         placeholder = {
                             Text(
                                 if (viewModel.uiState.value.isCompacting) "Compacting messages..."
-                                else "Type your message..."
+                                else "Type message or command (/help, /search, /analyze, /context, /git)..."
                             )
                         },
                         enabled = !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
@@ -433,6 +461,17 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
         if (showEmbeddingsDialog) {
             EmbeddingsDialog(
                 onDismiss = { showEmbeddingsDialog = false }
+            )
+        }
+
+        if (showAssistantSettingsDialog) {
+            AssistantSettingsDialog(
+                settings = viewModel.uiState.value.codeAssistantSettings,
+                onDismiss = { showAssistantSettingsDialog = false },
+                onSave = { settings ->
+                    viewModel.updateCodeAssistantSettings(settings)
+                    showAssistantSettingsDialog = false
+                }
             )
         }
 

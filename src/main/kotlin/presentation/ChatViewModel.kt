@@ -4,6 +4,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import data.*
+import data.commands.ChatCommand
+import data.commands.CommandParseResult
+import data.commands.CommandResult
 import data.mcp.McpServerManager
 import data.mcp.McpTool
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +45,9 @@ data class ChatUiState(
     val selectedEmbeddingFile: String? = null,
     val embeddingTopK: Int = 3,
     val embeddingThreshold: Float = 0.5f,
+    val codeAssistantEnabled: Boolean = false,
+    val codeAssistantWorkingDir: String? = null,
+    val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings(),
     val showTaskReminderDialog: Boolean = false,
     val taskReminderSummary: String = ""
 )
@@ -84,6 +90,20 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     // Embeddings support
     private var ollamaClient: OllamaClient? = null
 
+    // Code assistant support
+    private val fileSearchService = data.codeassistant.FileSearchService()
+    private val contentSearchService = data.codeassistant.ContentSearchService()
+    private val projectAnalysisService = data.codeassistant.ProjectAnalysisService(fileSearchService)
+    private val autoContextService = data.codeassistant.AutoContextService(fileSearchService, contentSearchService)
+
+    // Git support
+    private val gitRepositoryService = data.git.GitRepositoryService()
+    private val gitContextService = data.git.GitContextService(gitRepositoryService)
+
+    // Command support
+    private val commandParser = data.commands.CommandParser()
+    private val commandExecutor = data.commands.CommandExecutor(projectAnalysisService, fileSearchService, contentSearchService, gitRepositoryService)
+
     // Task reminder support
     private var taskReminderManager: TaskReminderManager? = null
 
@@ -116,7 +136,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     embeddingsEnabled = uiState.value.appSettings.embeddingsEnabled,
                     selectedEmbeddingFile = uiState.value.appSettings.selectedEmbeddingFile,
                     embeddingTopK = uiState.value.appSettings.embeddingTopK,
-                    embeddingThreshold = uiState.value.appSettings.embeddingThreshold
+                    embeddingThreshold = uiState.value.appSettings.embeddingThreshold,
+                    codeAssistantEnabled = uiState.value.appSettings.codeAssistantSettings.enabled,
+                    codeAssistantWorkingDir = uiState.value.appSettings.codeAssistantSettings.workingDirectory,
+                    codeAssistantSettings = uiState.value.appSettings.codeAssistantSettings
                 )
             }
 
@@ -182,6 +205,20 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private fun updateAvailableTools() {
         availableTools.clear()
         availableTools.addAll(mcpServerManager.getAllTools())
+    }
+
+    /**
+     * Updates the last user message in the conversation with usage information.
+     * This is used to track token usage and costs for user messages.
+     */
+    private fun updateLastUserMessageWithUsage(usage: UsageInfo) {
+        val lastUserIndex = internalMessages.indexOfLast {
+            it is InternalMessage.Regular && it.isUser
+        }
+        if (lastUserIndex != -1) {
+            val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
+            internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
+        }
     }
 
     private fun loadModels() {
@@ -311,6 +348,56 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         }
     }
 
+    private suspend fun enrichMessageWithCodeContext(content: String): String {
+        val settings = uiState.value.codeAssistantSettings
+
+        if (!settings.enabled || settings.workingDirectory.isNullOrBlank()) {
+            return content
+        }
+
+        if (!settings.autoContextEnabled) {
+            return content
+        }
+
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                println("[Code Assistant] Analyzing query for code references...")
+                autoContextService.enrichQueryWithCodeContext(content, settings)
+            } catch (e: Exception) {
+                println("[Code Assistant] Error enriching with code context: ${e.message}")
+                e.printStackTrace()
+                content
+            }
+        }
+    }
+
+    private suspend fun enrichMessageWithGitContext(content: String): String {
+        val settings = uiState.value.codeAssistantSettings
+
+        if (!settings.gitEnabled || settings.workingDirectory.isNullOrBlank()) {
+            return content
+        }
+
+        // Check if git keywords detected (if auto-detect enabled)
+        if (settings.gitAutoDetectEnabled) {
+            val hasGitReferences = autoContextService.detectGitReferences(content)
+            if (!hasGitReferences) {
+                return content // No git keywords, skip enrichment
+            }
+        }
+
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                println("[Git] Enriching query with git context...")
+                gitContextService.enrichQueryWithGitContext(content, settings)
+            } catch (e: Exception) {
+                println("[Git] Error enriching with git context: ${e.message}")
+                e.printStackTrace()
+                content
+            }
+        }
+    }
+
     fun sendMessage(content: String) {
         if (content.isBlank()) return
 
@@ -318,12 +405,27 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
         scope.launch {
             try {
+                // Check if this is a command
+                val parseResult = commandParser.parse(content)
+
+                if (parseResult.isCommand) {
+                    handleCommand(content, parseResult)
+                    return@launch
+                }
+
+                // Normal message processing continues...
                 // Enrich message with embeddings if enabled
-                val enrichedContent = enrichMessageWithEmbeddings(content)
+                val enrichedWithEmbeddings = enrichMessageWithEmbeddings(content)
+
+                // Enrich message with code context if enabled
+                val enrichedWithCodeContext = enrichMessageWithCodeContext(enrichedWithEmbeddings)
+
+                // Enrich message with git context if enabled
+                val fullyEnrichedContent = enrichMessageWithGitContext(enrichedWithCodeContext)
 
                 // Add enriched user message to internal storage
                 val userMessage = InternalMessage.Regular(
-                    content = enrichedContent,
+                    content = fullyEnrichedContent,
                     isUser = true
                 )
                 internalMessages.add(userMessage)
@@ -331,7 +433,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
                 // Check if pipeline mode is enabled and tools are available
                 if (uiState.value.pipelineEnabled && client.supportsTools() && availableTools.isNotEmpty()) {
-                    executePipeline(enrichedContent)
+                    executePipeline(fullyEnrichedContent)
                 } else {
                     executeSingleRound()
                 }
@@ -339,6 +441,113 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 updateState { copy(errorMessage = "Error: ${e.message}", isLoading = false) }
             }
         }
+    }
+
+    private suspend fun handleCommand(originalInput: String, parseResult: data.commands.CommandParseResult) {
+        try {
+            // Add user command to messages
+            val userMessage = InternalMessage.Regular(
+                content = originalInput,
+                isUser = true
+            )
+            internalMessages.add(userMessage)
+            syncToUIMessages()
+
+            // Handle parse errors
+            if (parseResult.error != null) {
+                val errorMessage = InternalMessage.Regular(
+                    content = "[Command Error] ${parseResult.error}",
+                    isUser = false
+                )
+                internalMessages.add(errorMessage)
+                syncToUIMessages()
+                updateState { copy(isLoading = false) }
+                saveCurrentSession()
+                return
+            }
+
+            val command = parseResult.command ?: return
+
+            // Special handling for context command
+            if (command is data.commands.ChatCommand.Context) {
+                val enabled = command.arguments[0].lowercase() == "on"
+                val newSettings = uiState.value.codeAssistantSettings.copy(
+                    autoContextEnabled = enabled
+                )
+                updateCodeAssistantSettings(newSettings)
+
+                val message = if (enabled) {
+                    "[System] Auto-context enrichment enabled"
+                } else {
+                    "[System] Auto-context enrichment disabled"
+                }
+
+                val systemMessage = InternalMessage.Regular(
+                    content = message,
+                    isUser = false
+                )
+                internalMessages.add(systemMessage)
+                syncToUIMessages()
+                updateState { copy(isLoading = false) }
+                saveCurrentSession()
+                return
+            }
+
+            // Execute command
+            val result = commandExecutor.execute(command, uiState.value.codeAssistantSettings)
+
+            when (result) {
+                is data.commands.CommandResult.Success -> {
+                    if (result.sendToLlm) {
+                        // Send output to LLM for formatting
+                        sendCommandResultToLlm(result.output)
+                    } else {
+                        // Display directly
+                        val resultMessage = InternalMessage.Regular(
+                            content = result.output,
+                            isUser = false
+                        )
+                        internalMessages.add(resultMessage)
+                        syncToUIMessages()
+                        updateState { copy(isLoading = false) }
+                        saveCurrentSession()
+                    }
+                }
+                is data.commands.CommandResult.Error -> {
+                    val errorMessage = InternalMessage.Regular(
+                        content = "[Command Error] ${result.message}",
+                        isUser = false
+                    )
+                    internalMessages.add(errorMessage)
+                    syncToUIMessages()
+                    updateState { copy(isLoading = false) }
+                    saveCurrentSession()
+                }
+            }
+        } catch (e: Exception) {
+            val errorMessage = InternalMessage.Regular(
+                content = "[Command Error] ${e.message}",
+                isUser = false
+            )
+            internalMessages.add(errorMessage)
+            syncToUIMessages()
+            updateState { copy(errorMessage = "Command failed: ${e.message}", isLoading = false) }
+            saveCurrentSession()
+        }
+    }
+
+    private suspend fun sendCommandResultToLlm(enrichedContent: String) {
+        // Update the last user message with the enriched content
+        val lastUserIndex = internalMessages.indexOfLast {
+            it is InternalMessage.Regular && it.isUser
+        }
+        if (lastUserIndex != -1) {
+            val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
+            internalMessages[lastUserIndex] = lastUser.copy(content = enrichedContent)
+        }
+
+        // Execute single round (no pipeline, no embeddings, no code context)
+        executeSingleRound()
     }
 
     private suspend fun executeSingleRound() {
@@ -422,13 +631,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     private suspend fun handlePipelineResult(result: PipelineResult) {
         // Update the last user message with total usage info
-        val lastUserIndex = internalMessages.indexOfLast {
-            it is InternalMessage.Regular && it.isUser
-        }
-        if (lastUserIndex != -1) {
-            val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
-            internalMessages[lastUserIndex] = lastUser.copy(usage = result.totalUsage)
-        }
+        updateLastUserMessageWithUsage(result.totalUsage)
 
         // Add tool execution details to UI
         if (result.toolExecutions.isNotEmpty()) {
@@ -494,13 +697,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private suspend fun handleToolUse(response: LlmMessage) {
         // Update the last user message with usage info
         response.usage?.let { usage ->
-            val lastUserIndex = internalMessages.indexOfLast {
-                it is InternalMessage.Regular && it.isUser
-            }
-            if (lastUserIndex != -1) {
-                val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
-                internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
-            }
+            updateLastUserMessageWithUsage(usage)
         }
 
         // Store tool_use blocks for later use
@@ -626,13 +823,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private suspend fun handleTextResponse(response: LlmMessage) {
         // Update the last user message with usage info
         response.usage?.let { usage ->
-            val lastUserIndex = internalMessages.indexOfLast {
-                it is InternalMessage.Regular && it.isUser
-            }
-            if (lastUserIndex != -1) {
-                val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
-                internalMessages[lastUserIndex] = lastUser.copy(usage = usage)
-            }
+            updateLastUserMessageWithUsage(usage)
         }
 
         // Add assistant response to internal storage
@@ -736,6 +927,31 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             updateState { copy(appSettings = newSettings) }
             appSettingsStorage.saveSettings(newSettings)
         }
+    }
+
+    fun updateCodeAssistantSettings(settings: CodeAssistantSettings) {
+        updateState {
+            copy(
+                codeAssistantEnabled = settings.enabled,
+                codeAssistantWorkingDir = settings.workingDirectory,
+                codeAssistantSettings = settings
+            )
+        }
+
+        // Save to persistent storage
+        scope.launch(Dispatchers.IO) {
+            val newAppSettings = uiState.value.appSettings.copy(
+                codeAssistantSettings = settings
+            )
+            updateState { copy(appSettings = newAppSettings) }
+            appSettingsStorage.saveSettings(newAppSettings)
+            println("[Code Assistant] Settings saved: enabled=${settings.enabled}, workingDir=${settings.workingDirectory}")
+        }
+    }
+
+    fun analyzeProject(): data.codeassistant.ProjectInfo? {
+        val workingDir = uiState.value.codeAssistantWorkingDir ?: return null
+        return projectAnalysisService.analyzeProject(java.io.File(workingDir))
     }
 
     private fun buildCompactionPrompt(messagesToCompact: List<InternalMessage.Regular>): String {

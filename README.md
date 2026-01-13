@@ -1,6 +1,6 @@
 # AI Advent Chat
 
-A feature-rich desktop chat application built with Kotlin and Jetbrains Compose that enables interaction with multiple AI language models. Developed as an incremental Advent Calendar project, showcasing advanced features including conversation compaction, RAG (Retrieval-Augmented Generation), and MCP (Model Context Protocol) tool integration.
+A feature-rich desktop chat application built with Kotlin and Jetbrains Compose that enables interaction with multiple AI language models. Developed as an incremental Advent Calendar project, showcasing advanced features including conversation compaction, RAG (Retrieval-Augmented Generation), Git integration, Code Assistant, and MCP (Model Context Protocol) tool integration.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![Kotlin](https://img.shields.io/badge/kotlin-2.2.20-purple)
@@ -22,6 +22,52 @@ A feature-rich desktop chat application built with Kotlin and Jetbrains Compose 
 - **Token & Cost Tracking**: Real-time monitoring of input/output tokens and estimated costs
 - **Copy History**: Export chat history to clipboard
 
+### Code Assistant & Project Context 🆕
+- **Working Directory**: Configure project directory for intelligent code analysis
+- **File Search**: Pattern-based (glob) and fuzzy file name matching with exclusion filters
+- **Content Search**: Regex-based search within files with context lines
+- **Project Analysis**: Auto-detect project type (Gradle, Maven, npm, Python, Rust, Go)
+- **Auto-Context Enrichment**: Automatically includes relevant code context based on detected references
+- **Smart Reference Detection**: Identifies file names, paths, class names, function names, and error lines in queries
+- **Configurable**: Adjust max files, patterns, and file size limits
+
+### Chat Commands 🆕
+Execute powerful commands directly in chat:
+- **`/help`** - Generate comprehensive project report (architecture, file structure, code samples)
+- **`/search <query>`** - Search files and code content instantly
+- **`/analyze <file>`** - Get detailed AI-powered analysis of specific files
+- **`/context on|off`** - Toggle auto-context enrichment
+- **`/git status`** - Show repository status with branch and changes
+- **`/git diff [file]`** - View uncommitted changes
+- **`/git log`** - Display commit history
+- **`/git branch`** - Show current branch and remote info
+
+### Git Integration 🆕
+**Three complementary ways to work with git:**
+
+1. **Auto-Context Enrichment** (Automatic)
+   - Detects git-related keywords in queries ("branch", "commit", "changes", etc.)
+   - Automatically includes repository status, diffs, and commit history
+   - Smart keyword detection with 20+ git-related terms
+
+2. **MCP Tools** (LLM-Driven)
+   - `git_status` - Repository status and file changes
+   - `git_diff` - View uncommitted changes
+   - `git_log` - Commit history with authors and dates
+   - `git_branch` - Current branch and remote information
+   - `git_show` - Detailed commit inspection
+   - LLM can autonomously decide when to use git tools
+
+3. **Chat Commands** (Manual)
+   - Direct `/git` commands for explicit git operations
+   - Formatted output with clear status indicators
+
+**Features:**
+- Smart caching (status: 30s, diffs: 60s, history: 5min)
+- Configurable size limits (max diff lines, max commits)
+- Error handling (git not installed, not a repo, timeouts)
+- Cross-platform support (Windows, macOS, Linux)
+
 ### RAG & Semantic Search
 - **Local Embeddings**: Generate embeddings using Ollama (nomic-embed-text model)
 - **Document Chunking**: Fixed-size with overlap or paragraph-based chunking strategies
@@ -33,7 +79,10 @@ A feature-rich desktop chat application built with Kotlin and Jetbrains Compose 
 ### MCP Integration (Model Context Protocol)
 - **JSON-RPC 2.0**: Full protocol implementation for tool communication
 - **Multi-Server Support**: Manage multiple MCP server processes
-- **Built-in Shell Server**: Execute shell commands via MCP interface
+- **Built-in Servers**:
+  - **Shell Command Server**: Execute shell commands via MCP interface
+  - **Git Server**: Complete git operations as MCP tools 🆕
+- **Auto-Registration**: Servers automatically configured on first startup
 - **Pipeline Mode**: Sequential multi-step tool execution (up to 10 iterations)
 - **Tool Use Tracking**: Complete tool request/response flow in conversations
 
@@ -44,6 +93,28 @@ A feature-rich desktop chat application built with Kotlin and Jetbrains Compose 
 - **Custom System Prompts**: Set context-specific instructions
 
 ## Recent Improvements
+
+### Git Integration (Latest)
+Complete git repository awareness with three complementary access methods:
+- **MCP Tools**: LLM can autonomously interact with git repositories
+- **Auto-Context**: Smart keyword detection automatically enriches queries
+- **Manual Commands**: Direct `/git` commands for explicit control
+- Comprehensive error handling and cross-platform support
+
+### Code Assistant System
+Intelligent code-aware conversation with:
+- Project type detection and analysis
+- File and content search with glob patterns
+- Auto-context enrichment based on reference detection
+- Configurable file inclusion/exclusion patterns
+- Integration with chat commands for direct file analysis
+
+### Chat Commands Framework
+Hybrid execution model with:
+- **Client-side commands**: Instant results for search and status
+- **LLM-assisted commands**: Intelligent formatting for help and analysis
+- Extensible command parser and handler architecture
+- Special handling for settings modifications
 
 ### Unified State Pattern Refactoring
 The application has been refactored to use a modern unified state management pattern:
@@ -60,21 +131,6 @@ The application has been refactored to use a modern unified state management pat
 - ✅ **Easier Testing**: Can snapshot entire application state at once
 - ✅ **Maintainability**: Clear, centralized state structure
 
-**Technical Details:**
-```kotlin
-// Before: Scattered state fields
-val isLoading = mutableStateOf(false)
-val errorMessage = mutableStateOf<String?>(null)
-// ... 24 more fields
-
-// After: Unified state
-val uiState = mutableStateOf(ChatUiState(
-    isLoading = false,
-    errorMessage = null,
-    // ... all 26 fields in one place
-))
-```
-
 ## Technologies & Frameworks
 
 ### Core Stack
@@ -88,10 +144,11 @@ val uiState = mutableStateOf(ChatUiState(
 - **HTTP Client**: Ktor 3.0.2 (with content negotiation & logging)
 - **Serialization**: Kotlin Serialization JSON
 
-### AI Providers
+### AI Providers & Tools
 - **Anthropic Claude API**: Primary LLM provider
 - **Perplexity API**: Secondary LLM provider
 - **Ollama**: Local embedding generation
+- **Git CLI**: Repository operations
 
 ## Architecture
 
@@ -103,11 +160,23 @@ The application follows a **three-layer MVVM architecture** with **unified state
   - **Unified State Pattern**: Single immutable `ChatUiState` data class containing all 26 UI state fields
   - **Immutable Updates**: State changes use `copy()` for thread-safe, predictable updates
   - **Performance Optimized**: Lists kept separate for efficient recomposition
-- **UI Components**: SessionSidebar, McpSettingsDialog, EmbeddingsDialog
+- **UI Components**: SessionSidebar, McpSettingsDialog, EmbeddingsDialog, AssistantSettingsDialog
 - **Message Models**: Message.kt (UI) / InternalMessage.kt (internal state)
 
 ### Data/Business Logic Layer (`data/`)
 - **API Clients**: Abstract ApiClient interface with ClaudeClient and PerplexityClient implementations
+- **Code Assistant System**:
+  - FileSearchService for pattern-based file discovery
+  - ContentSearchService for code content search
+  - ProjectAnalysisService for project type detection
+  - AutoContextService for smart context enrichment
+- **Git Integration**:
+  - GitRepositoryService for git command execution with caching
+  - GitContextService for LLM context formatting
+- **Commands System**:
+  - CommandParser for command interpretation
+  - CommandExecutor for handler orchestration
+  - Individual handlers (Help, Search, Analyze, Context, Git)
 - **Embedding System**:
   - OllamaClient for local embedding generation
   - EmbeddingSearch with MMR algorithm
@@ -121,17 +190,20 @@ The application follows a **three-layer MVVM architecture** with **unified state
 
 ### MCP Tools (`mcp/`)
 - **ShellCommandMcpServer**: Built-in MCP server for shell command execution
+- **GitMcpServer**: Built-in MCP server for git operations 🆕
 
 ### Data Models
 - **ChatMessage**: Polymorphic content (text/blocks) compatible with Claude API
 - **ContentBlock**: Tool use, tool results, text blocks
 - **LlmMessage**: Standardized LLM responses
 - **SessionData**: Complete session state structure
+- **GitModels**: GitStatus, GitDiff, GitCommit, GitContext
 
 ## Installation & Setup
 
 ### Prerequisites
 - **Java Development Kit (JDK)**: 11 or higher
+- **Git**: Required for git integration features
 - **API Keys**:
   - `CLAUDE_API_KEY` environment variable (required for Anthropic)
   - `PERPLEXITY_API_KEY` environment variable (optional for Perplexity)
@@ -182,6 +254,29 @@ All configuration and data files are stored in `~/.ai-advent-chat/`:
 └── app-settings.json      # Application settings
 ```
 
+### Code Assistant Configuration
+
+Configure via UI (Code Assistant icon in toolbar):
+
+- **Working Directory**: Path to your project
+- **Auto-Context**: Enable/disable automatic context enrichment
+- **Max Files**: Number of files to include in context (default: 5)
+- **File Patterns**:
+  - Include: `*.kt`, `*.java`, `*.py`, `*.js`, `*.ts`, `*.md`
+  - Exclude: `**/build/**`, `**/node_modules/**`, `**/.git/**`, `**/.idea/**`
+- **Max File Size**: Maximum file size to read (default: 100,000 chars)
+
+### Git Integration Configuration
+
+Configure via Code Assistant settings:
+
+- **Git Enabled**: Enable/disable git integration
+- **Auto-Detect**: Automatically detect git keywords and include context
+- **Include Diffs**: Include uncommitted changes in context
+- **Include History**: Include recent commits in context
+- **Max Diff Lines**: Maximum diff lines to include (default: 500)
+- **Max Commits**: Number of commits in history (default: 5)
+
 ### MCP Server Configuration
 
 Configure MCP servers via the UI (Settings → MCP Servers):
@@ -199,7 +294,9 @@ Configure MCP servers via the UI (Settings → MCP Servers):
 }
 ```
 
-The built-in **Shell Command Server** is automatically configured.
+**Built-in Servers** (automatically configured):
+- **Shell Command Server**: Execute shell commands
+- **Git Server**: Git repository operations
 
 ### Embedding Configuration
 
@@ -215,6 +312,7 @@ Adjust embedding settings in the UI:
 - **Embedding cache size**: 5 files (LRU)
 - **Default temperature**: 0.7
 - **Default max tokens**: 4096
+- **Git cache TTL**: Status 30s, Diffs 60s, History 5min
 
 ## Usage
 
@@ -232,6 +330,80 @@ Adjust embedding settings in the UI:
 
 ### Advanced Features
 
+#### Code Assistant
+1. Click Code Assistant icon in toolbar
+2. Set working directory to your project
+3. Enable auto-context enrichment
+4. Configure file patterns as needed
+5. Ask questions about your code - context is automatically included!
+
+**Example queries:**
+- "What does the ChatViewModel class do?"
+- "Show me the implementation of sendMessage"
+- "Explain the error in line 42"
+- "How is the project structured?"
+
+#### Chat Commands
+
+**Project Information:**
+```
+/help
+```
+Generates comprehensive project report with architecture, file structure, and code samples.
+
+**Search:**
+```
+/search ChatViewModel
+/search sendMessage
+```
+Instantly finds files and code content matching your query.
+
+**File Analysis:**
+```
+/analyze src/main/kotlin/ChatViewModel.kt
+```
+Provides AI-powered analysis of the specified file including purpose, components, and code quality.
+
+**Context Control:**
+```
+/context off    # Disable auto-context enrichment
+/context on     # Enable auto-context enrichment
+```
+
+**Git Operations:**
+```
+/git status              # Show repository status
+/git diff                # View all uncommitted changes
+/git diff ChatViewModel.kt  # View specific file changes
+/git log                 # Show commit history
+/git branch              # Show current branch
+```
+
+#### Git Integration
+
+**Auto-Detection (Automatic):**
+Just ask git-related questions naturally:
+- "What branch am I on?"
+- "What files have I modified?"
+- "Show me recent changes"
+- "What's in the last commit?"
+
+Context is automatically enriched when git keywords are detected!
+
+**MCP Tools (LLM-Driven):**
+The LLM can autonomously call git tools when appropriate:
+- Checking repository status before suggesting changes
+- Viewing diffs to understand recent modifications
+- Inspecting commit history for context
+- Combining git info with code analysis
+
+**Manual Commands:**
+Use explicit `/git` commands for direct control:
+- `/git status` - Formatted status output
+- `/git diff [file]` - View specific or all diffs
+- `/git log` - Commit history with authors
+- `/git branch` - Branch and remote information
+
 #### Conversation Compaction
 - **Auto**: Happens automatically after every 10 messages
 - **Manual**: Click "Compact" button to summarize current conversation
@@ -247,10 +419,14 @@ Adjust embedding settings in the UI:
 
 #### MCP Tools
 1. Open Settings → MCP Servers
-2. Add or configure MCP servers
+2. Add or configure MCP servers (or use built-in servers)
 3. Enable desired servers
 4. Use natural language to request tool execution
 5. Tools execute in pipeline mode (up to 10 steps)
+
+**Built-in MCP Tools:**
+- **Shell Commands**: execute_command, read_file, write_file, list_directory
+- **Git Operations**: git_status, git_diff, git_log, git_branch, git_show
 
 #### Custom System Prompts
 1. Open Settings
@@ -274,6 +450,9 @@ Adjust embedding settings in the UI:
 
 # Run MCP shell server standalone
 ./gradlew runMcpShellServer
+
+# Run MCP git server standalone
+./gradlew runMcpGitServer
 ```
 
 ### Build Configuration
@@ -297,6 +476,24 @@ AI-Advent-Chat/
 │   │   ├── FileChunking.kt          # Document chunking strategies
 │   │   ├── EmbeddingStorage.kt      # Embedding persistence
 │   │   ├── SessionStorage.kt        # Session persistence
+│   │   ├── CodeAssistantSettings.kt # Code assistant configuration
+│   │   ├── codeassistant/           # Code assistant services
+│   │   │   ├── FileSearchService.kt
+│   │   │   ├── ContentSearchService.kt
+│   │   │   ├── ProjectAnalysisService.kt
+│   │   │   └── AutoContextService.kt
+│   │   ├── commands/                # Chat command system
+│   │   │   ├── CommandParser.kt
+│   │   │   ├── CommandExecutor.kt
+│   │   │   ├── HelpCommandHandler.kt
+│   │   │   ├── SearchCommandHandler.kt
+│   │   │   ├── AnalyzeCommandHandler.kt
+│   │   │   ├── ContextCommandHandler.kt
+│   │   │   └── GitCommandHandler.kt
+│   │   ├── git/                     # Git integration
+│   │   │   ├── GitModels.kt
+│   │   │   ├── GitRepositoryService.kt
+│   │   │   └── GitContextService.kt
 │   │   ├── McpPipeline.kt           # Multi-tool execution
 │   │   ├── mcp/                     # MCP protocol implementation
 │   │   │   ├── McpServerManager.kt
@@ -311,9 +508,13 @@ AI-Advent-Chat/
 │   │   ├── ChatViewModel.kt         # MVVM ViewModel
 │   │   ├── SessionSidebar.kt        # Session management UI
 │   │   ├── McpSettingsDialog.kt     # MCP configuration UI
-│   │   └── EmbeddingsDialog.kt      # Embedding generation UI
+│   │   ├── EmbeddingsDialog.kt      # Embedding generation UI
+│   │   └── AssistantSettingsDialog.kt  # Code assistant config UI
 │   └── mcp/                         # Built-in MCP tools
-│       └── ShellCommandMcpServer.kt
+│       ├── ShellCommandMcpServer.kt
+│       └── GitMcpServer.kt          # Git MCP server
+├── run-mcp-shell-server.sh/.bat    # Shell server launchers
+├── run-mcp-git-server.sh/.bat      # Git server launchers
 ├── build.gradle.kts                 # Build configuration
 └── gradle.properties                # Gradle properties
 ```
@@ -331,6 +532,8 @@ data class ChatUiState(
     val systemPrompt: String = "",
     val temperature: Float = 0.1f,
     val selectedModel: String = "claude-sonnet-4-20250514",
+    val codeAssistantEnabled: Boolean = false,
+    val codeAssistantWorkingDir: String? = null,
     // ... 26 total fields
 )
 
@@ -353,11 +556,38 @@ Benefits:
 
 **Message Flow:**
 1. User input → ChatViewModel
-2. ViewModel → ApiClient (Claude/Perplexity)
-3. Streaming response → Real-time UI updates
-4. Tool calls → MCP Pipeline execution
-5. Embeddings → Semantic search → Context injection
-6. Final response → SessionStorage persistence
+2. Command detection → CommandParser → CommandExecutor
+3. Context enrichment → Code Assistant + Git Integration
+4. ViewModel → ApiClient (Claude/Perplexity)
+5. Streaming response → Real-time UI updates
+6. Tool calls → MCP Pipeline execution
+7. Embeddings → Semantic search → Context injection
+8. Final response → SessionStorage persistence
+
+**Code Assistant Context Enrichment:**
+1. Detect code references in query (files, classes, functions, paths)
+2. Search for matching files using FileSearchService
+3. Search content using ContentSearchService
+4. Collect up to maxFilesInContext matches
+5. Format context with file contents
+6. Prepend to user message before LLM
+
+**Git Context Enrichment:**
+1. Detect git keywords in query (branch, commit, diff, changes, etc.)
+2. Check if working directory is a git repository
+3. Fetch git status (cached 30s)
+4. Fetch diffs if enabled (cached 60s)
+5. Fetch commit history if enabled (cached 5min)
+6. Format context for LLM
+7. Prepend to user message
+
+**MCP Tool Execution:**
+1. LLM requests tool use in response
+2. McpPipeline routes to appropriate MCP server
+3. Server executes tool and returns result
+4. Result injected back into conversation
+5. LLM continues with tool output
+6. Supports up to 10 iterations for complex workflows
 
 **Compaction Strategy:**
 - Triggered after 10 messages (auto) or on-demand (manual)
@@ -377,10 +607,23 @@ Benefits:
 - **Coroutine-Safe**: All state operations safe across coroutine contexts
 - **Atomic Operations**: Embedding cache uses atomic operations
 
-### Future Enhancements (Commented Out)
-- **Task Reminders**: Experimental feature (see TaskReminderManager.kt)
-- **Additional Vendors**: Architecture supports easy addition of new LLM providers
-- **Advanced RAG**: Potential for hybrid search (keyword + semantic)
+### Architecture Highlights
+
+**Hybrid Command Execution:**
+- **Client-side**: Instant results (search, status)
+- **LLM-assisted**: Intelligent formatting (help, analysis)
+- **Extensible**: Easy to add new commands via handler pattern
+
+**Three-Layer Git Integration:**
+- **MCP Tools**: LLM autonomy for git operations
+- **Auto-Context**: Smart keyword-based enrichment
+- **Manual Commands**: User-driven explicit control
+
+**Service-Based Architecture:**
+- Each concern has dedicated service class
+- Clean separation of responsibilities
+- Easy to test and maintain
+- Consistent error handling patterns
 
 ## Troubleshooting
 
@@ -389,6 +632,23 @@ Benefits:
 **"No API keys found" error:**
 - Ensure CLAUDE_API_KEY or PERPLEXITY_API_KEY environment variables are set
 - Restart the application after setting environment variables
+
+**Git integration not working:**
+- Verify git is installed and accessible: `git --version`
+- Check working directory is a git repository
+- Enable git integration in Code Assistant settings
+- Check git server status in MCP settings
+
+**Code Assistant not finding files:**
+- Verify working directory is set correctly
+- Check file include/exclude patterns
+- Ensure files match configured patterns (*.kt, *.java, etc.)
+- Check max file size limit
+
+**"Not a git repository" error:**
+- Ensure working directory is set to a git repository
+- Check that .git directory exists in working directory
+- Verify git initialization: `git rev-parse --is-inside-work-tree`
 
 **Ollama connection failed:**
 - Verify Ollama is running: `ollama list`
@@ -399,6 +659,7 @@ Benefits:
 - Check server command and arguments in MCP Settings
 - Verify server binary is executable
 - Review server logs in the UI
+- For git server: ensure git CLI is installed
 
 **Build errors:**
 - Ensure JDK 11+ is installed
@@ -416,6 +677,7 @@ This project is provided as-is for educational and personal use.
 - Uses [Perplexity API](https://www.perplexity.ai)
 - Embedding generation via [Ollama](https://ollama.ai)
 - MCP protocol by Anthropic
+- Git integration via Git CLI
 
 ---
 

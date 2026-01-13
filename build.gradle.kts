@@ -77,3 +77,12 @@ tasks.register<JavaExec>("runMcpShellServer") {
     standardOutput = System.out
     errorOutput = System.err
 }
+
+// Custom task to run MCP Git Server
+tasks.register<JavaExec>("runMcpGitServer") {
+    mainClass.set("mcp.GitMcpServerKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    standardOutput = System.out
+    errorOutput = System.err
+}

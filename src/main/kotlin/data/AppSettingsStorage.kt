@@ -14,7 +14,8 @@ data class AppSettings(
     val embeddingsEnabled: Boolean = false,
     val selectedEmbeddingFile: String? = null,
     val embeddingTopK: Int = 3,
-    val embeddingThreshold: Float = 0.5f
+    val embeddingThreshold: Float = 0.5f,
+    val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings()
 )
 
 class AppSettingsStorage {
@@ -47,13 +48,24 @@ class AppSettingsStorage {
                 println("[Settings] Loaded app settings with ${loadedSettings.mcpServers.size} MCP servers")
 
                 // Auto-add shell command server if not present
-                if (!loadedSettings.mcpServers.any { it.id == "shell-command-server" }) {
+                var updatedSettings = if (!loadedSettings.mcpServers.any { it.id == "shell-command-server" }) {
                     println("[Settings] Shell command server not found, adding it automatically")
                     needsSave = true
                     addShellCommandServer(loadedSettings)
                 } else {
                     loadedSettings
                 }
+
+                // Auto-add git server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "git-server" }) {
+                    println("[Settings] Git server not found, adding it automatically")
+                    needsSave = true
+                    addGitServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
+                updatedSettings
             }
 
             // Save settings if they were modified
@@ -100,6 +112,31 @@ class AppSettingsStorage {
         return McpServerConfig(
             id = "shell-command-server",
             name = "Shell Command Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),
+            enabled = true
+        )
+    }
+
+    private fun addGitServer(settings: AppSettings): AppSettings {
+        val gitServer = createGitServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + gitServer
+        )
+    }
+
+    private fun createGitServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-git-server.bat" else "run-mcp-git-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating git server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "git-server",
+            name = "Git Server",
             command = scriptPath,
             args = emptyList(),
             env = emptyMap(),
