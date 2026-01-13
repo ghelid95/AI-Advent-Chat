@@ -63,6 +63,41 @@ object FileChunking {
                 continue
             }
 
+            // If paragraph itself exceeds max size, split it into smaller chunks
+            if (trimmedParagraph.length > maxChunkSize) {
+                // Finish current chunk if it has content
+                if (currentChunk.isNotEmpty()) {
+                    val chunkText = currentChunk.toString().trim()
+                    chunks.add(TextChunk(
+                        text = chunkText,
+                        index = chunkIndex,
+                        startChar = startChar,
+                        endChar = startChar + chunkText.length
+                    ))
+                    chunkIndex++
+                    currentChunk.clear()
+                }
+
+                // Split oversized paragraph into fixed-size chunks
+                var paragraphStart = 0
+                while (paragraphStart < trimmedParagraph.length) {
+                    val paragraphEnd = minOf(paragraphStart + maxChunkSize, trimmedParagraph.length)
+                    val chunkText = trimmedParagraph.substring(paragraphStart, paragraphEnd)
+                    chunks.add(TextChunk(
+                        text = chunkText,
+                        index = chunkIndex,
+                        startChar = currentPosition + paragraphStart,
+                        endChar = currentPosition + paragraphEnd
+                    ))
+                    chunkIndex++
+                    paragraphStart = paragraphEnd
+                }
+
+                startChar = currentPosition + trimmedParagraph.length
+                currentPosition += paragraph.length + 2
+                continue
+            }
+
             if (currentChunk.length + trimmedParagraph.length > maxChunkSize && currentChunk.isNotEmpty()) {
                 val chunkText = currentChunk.toString().trim()
                 chunks.add(TextChunk(

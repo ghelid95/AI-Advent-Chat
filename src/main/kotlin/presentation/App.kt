@@ -355,60 +355,75 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                     }
                 }
 
-                // Input Field
-                Row(
+                // Input Field with Command Dropdown
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(16.dp)
                 ) {
-                    OutlinedTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = {
-                            Text(
-                                if (viewModel.uiState.value.isCompacting) "Compacting messages..."
-                                else "Type message or command (/help, /search, /analyze, /context, /git)..."
-                            )
-                        },
-                        enabled = !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color.Gray
-                        ),
-                        keyboardOptions = KeyboardOptions(
-                            imeAction = ImeAction.Send
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onSend = {
-                                captureMessage()
+                    Column {
+                        // Command Autocomplete Dropdown
+                        CommandAutocompleteDropdown(
+                            inputText = inputText,
+                            onCommandSelect = { command ->
+                                inputText = command
                             }
                         )
-                    )
 
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = {
-                            captureMessage()
-                        },
-                        enabled = inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                if (inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting)
-                                    MaterialTheme.colorScheme.primary
-                                else Color.Gray,
-                                shape = RoundedCornerShape(28.dp)
+                        // Input Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = {
+                                    Text(
+                                        if (viewModel.uiState.value.isCompacting) "Compacting messages..."
+                                        else "Type message or command (/)..."
+                                    )
+                                },
+                                enabled = !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = Color.Gray
+                                ),
+                                keyboardOptions = KeyboardOptions(
+                                    imeAction = ImeAction.Send
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onSend = {
+                                        captureMessage()
+                                    }
+                                )
                             )
-                    ) {
-                        Icon(
-                            Icons.Default.Send,
-                            contentDescription = "Send",
-                            tint = Color.White
-                        )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = {
+                                    captureMessage()
+                                },
+                                enabled = inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .background(
+                                        if (inputText.isNotBlank() && !viewModel.uiState.value.isLoading && !viewModel.uiState.value.isCompacting)
+                                            MaterialTheme.colorScheme.primary
+                                        else Color.Gray,
+                                        shape = RoundedCornerShape(28.dp)
+                                    )
+                            ) {
+                                Icon(
+                                    Icons.Default.Send,
+                                    contentDescription = "Send",
+                                    tint = Color.White
+                                )
+                            }
+                        }
                     }
                 }
                 }
@@ -495,6 +510,102 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
             TaskReminderDialog(
                 taskSummary = viewModel.uiState.value.taskReminderSummary,
                 onDismiss = { viewModel.dismissTaskReminderDialog() }
+            )
+        }
+    }
+}
+
+data class CommandInfo(
+    val command: String,
+    val description: String,
+    val usage: String
+)
+
+@Composable
+fun CommandAutocompleteDropdown(
+    inputText: String,
+    onCommandSelect: (String) -> Unit
+) {
+    val showDropdown = inputText.startsWith("/") && inputText.length >= 1
+
+    val commands = remember {
+        listOf(
+            CommandInfo("/help", "Show detailed project information and available commands", "/help"),
+            CommandInfo("/search", "Search for files or code in the project", "/search <query>"),
+            CommandInfo("/analyze", "Analyze a specific file", "/analyze <file>"),
+            CommandInfo("/context", "Toggle auto-context enrichment", "/context on|off"),
+            CommandInfo("/git status", "Show repository status", "/git status"),
+            CommandInfo("/git diff", "Show uncommitted changes", "/git diff"),
+            CommandInfo("/git log", "Show commit history", "/git log"),
+            CommandInfo("/git branch", "Show current branch info", "/git branch"),
+            CommandInfo("/review-pr", "Review current branch as pull request", "/review-pr")
+        )
+    }
+
+    if (showDropdown) {
+        val searchTerm = inputText.lowercase()
+        val filteredCommands = commands.filter {
+            it.command.lowercase().startsWith(searchTerm) ||
+            it.description.lowercase().contains(searchTerm.drop(1))
+        }
+
+        if (filteredCommands.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .padding(bottom = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(filteredCommands) { commandInfo ->
+                        CommandItem(
+                            commandInfo = commandInfo,
+                            onClick = { onCommandSelect(commandInfo.usage) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CommandItem(
+    commandInfo: CommandInfo,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = commandInfo.command,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = commandInfo.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray
+        )
+        if (commandInfo.usage != commandInfo.command) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Usage: ${commandInfo.usage}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.LightGray,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
             )
         }
     }

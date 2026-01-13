@@ -640,18 +640,28 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         }
     }
 
-    private suspend fun sendCommandResultToLlm(enrichedContent: String) {
-        // Update the last user message with the enriched content
+    private suspend fun sendCommandResultToLlm(commandOutput: String) {
+        // Apply full enrichment chain to command output
+        val enrichedWithProjectDocs = enrichMessageWithProjectDocs(commandOutput)
+        val enrichedWithEmbeddings = enrichMessageWithEmbeddings(enrichedWithProjectDocs)
+        val enrichedWithCodeContext = enrichMessageWithCodeContext(enrichedWithEmbeddings)
+        val fullyEnrichedContent = enrichMessageWithGitContext(enrichedWithCodeContext)
+
+        // Update the last user message with the fully enriched content
         val lastUserIndex = internalMessages.indexOfLast {
             it is InternalMessage.Regular && it.isUser
         }
         if (lastUserIndex != -1) {
             val lastUser = internalMessages[lastUserIndex] as InternalMessage.Regular
-            internalMessages[lastUserIndex] = lastUser.copy(content = enrichedContent)
+            internalMessages[lastUserIndex] = lastUser.copy(content = fullyEnrichedContent)
         }
 
-        // Execute single round (no pipeline, no embeddings, no code context)
-        executeSingleRound()
+        // Use pipeline if enabled and tools available, otherwise single round
+        if (uiState.value.pipelineEnabled && client.supportsTools() && availableTools.isNotEmpty()) {
+            executePipeline(fullyEnrichedContent)
+        } else {
+            executeSingleRound()
+        }
     }
 
     private suspend fun executeSingleRound() {

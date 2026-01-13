@@ -159,9 +159,19 @@ object EmbeddingSearch {
             val loadTime = System.currentTimeMillis() - startTime
             println("[EmbeddingSearch] Loaded ${documentEmbeddings.totalChunks} chunks from ${embeddingFile.name} in ${loadTime}ms")
 
+            // Truncate query to reasonable length for embedding generation
+            // For semantic search, we only need the core query, not the entire enriched context
+            // Use first 2000 chars which is sufficient for search relevance
+            val truncatedQuery = if (query.length > 2000) {
+                println("[EmbeddingSearch] Query too long (${query.length} chars), using first 2000 chars for embedding")
+                query.take(2000)
+            } else {
+                query
+            }
+
             // Generate embedding for the query
             val queryStartTime = System.currentTimeMillis()
-            val queryEmbedding = ollamaClient.generateEmbedding(query, documentEmbeddings.model)
+            val queryEmbedding = ollamaClient.generateEmbedding(truncatedQuery, documentEmbeddings.model)
             if (queryEmbedding.isEmpty()) {
                 println("[EmbeddingSearch] Failed to generate query embedding")
                 return emptyList()

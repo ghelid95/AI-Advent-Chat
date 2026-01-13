@@ -20,7 +20,10 @@ class ProjectDocsService(
         private const val MAX_FILE_SIZE = 500_000
         private const val MAX_COMBINED_SIZE = 1_000_000
         private const val MAX_DOCS_FILES = 10
-        private const val CHUNK_SIZE = 1000
+        // Reduced chunk size to stay well within embedding model's context limit
+        // nomic-embed-text has 8192 token context, ~4 chars per token
+        // 600 chars = ~150 tokens, leaving plenty of room
+        private const val CHUNK_SIZE = 600
         private const val CHUNK_OVERLAP = 100
     }
 
