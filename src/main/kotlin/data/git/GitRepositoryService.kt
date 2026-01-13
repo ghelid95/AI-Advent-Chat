@@ -342,4 +342,101 @@ class GitRepositoryService {
                 }
             }
     }
+
+    /**
+     * Detect base branch by trying common patterns
+     * Order: main, master, develop, trunk (local then remote)
+     */
+    fun detectBaseBranch(workingDir: File): String? {
+        val candidates = listOf("main", "master", "develop", "trunk")
+
+        for (candidate in candidates) {
+            // Try local branch
+            val localCheck = executeGitCommand(
+                workingDir,
+                listOf("rev-parse", "--verify", candidate)
+            )
+            if (localCheck.isSuccess) return candidate
+
+            // Try remote branch
+            val remoteCheck = executeGitCommand(
+                workingDir,
+                listOf("rev-parse", "--verify", "origin/$candidate")
+            )
+            if (remoteCheck.isSuccess) return "origin/$candidate"
+        }
+
+        return null
+    }
+
+    /**
+     * Get diff between two branches using three-dot syntax
+     * Uses git diff base...current for merge-base comparison
+     */
+    fun getBranchDiff(
+        workingDir: File,
+        baseBranch: String,
+        currentBranch: String = "HEAD"
+    ): Result<List<GitDiff>> {
+        // Cache key includes both branches
+        val cacheKey = "${workingDir.absolutePath}:diff:$baseBranch...$currentBranch"
+        val now = System.currentTimeMillis()
+
+        // Check cache (30 second TTL)
+        diffCache[cacheKey]?.let { (timestamp, cached) ->
+            if (now - timestamp < 30000L) {
+                return Result.success(cached)
+            }
+        }
+
+        return try {
+            val args = listOf("diff", "$baseBranch...$currentBranch")
+            val diffResult = executeGitCommand(workingDir, args, timeout = 60000)
+
+            if (diffResult.isFailure) {
+                return Result.failure(
+                    diffResult.exceptionOrNull() ?: Exception("Failed to get branch diff")
+                )
+            }
+
+            val diffs = parseGitDiff(diffResult.getOrNull() ?: "")
+            diffCache[cacheKey] = Pair(now, diffs)
+
+            Result.success(diffs)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Get commits between branches (base..current)
+     */
+    fun getCommitsBetweenBranches(
+        workingDir: File,
+        baseBranch: String,
+        currentBranch: String = "HEAD",
+        maxCount: Int = 20
+    ): Result<List<GitCommit>> {
+        return try {
+            val args = listOf(
+                "log",
+                "$baseBranch..$currentBranch",
+                "-n", maxCount.toString(),
+                "--format=%H|%h|%s|%an|%ad",
+                "--date=short"
+            )
+
+            val logResult = executeGitCommand(workingDir, args, timeout = 15000)
+            if (logResult.isFailure) {
+                return Result.failure(
+                    logResult.exceptionOrNull() ?: Exception("Failed to get commits")
+                )
+            }
+
+            val commits = parseGitLog(logResult.getOrNull() ?: "")
+            Result.success(commits)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

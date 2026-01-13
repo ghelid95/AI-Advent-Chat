@@ -58,7 +58,11 @@ class CommandParser {
 
             "git" -> parseGitCommand(args)
 
-            else -> CommandParseResult(null, true, "Unknown command: /$commandName. Available commands: /help, /search, /analyze, /context, /git")
+            "review-pr", "reviewpr" -> {
+                CommandParseResult(ChatCommand.ReviewPr(args), true)
+            }
+
+            else -> CommandParseResult(null, true, "Unknown command: /$commandName. Available commands: /help, /search, /analyze, /context, /git, /review-pr")
         }
     }
 

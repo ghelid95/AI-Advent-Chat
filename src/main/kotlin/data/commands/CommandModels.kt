@@ -80,6 +80,17 @@ sealed class ChatCommand {
     data class GitBranch(override val arguments: List<String> = emptyList()) : ChatCommand() {
         override val name = "git"
     }
+
+    /**
+     * /review-pr [base-branch] - Review current branch as pull request
+     * Auto-detects base branch if not specified
+     */
+    data class ReviewPr(override val arguments: List<String> = emptyList()) : ChatCommand() {
+        override val name = "review-pr"
+
+        // Optional: user can specify base branch
+        val baseBranch: String? = arguments.firstOrNull()
+    }
 }
 
 /**
