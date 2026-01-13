@@ -100,6 +100,9 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private val gitRepositoryService = data.git.GitRepositoryService()
     private val gitContextService = data.git.GitContextService(gitRepositoryService)
 
+    // Project documentation RAG support
+    private val projectDocsService = data.projectdocs.ProjectDocsService(ollamaClient = null)
+
     // Command support
     private val commandParser = data.commands.CommandParser()
     private val commandExecutor = data.commands.CommandExecutor(projectAnalysisService, fileSearchService, contentSearchService, gitRepositoryService)
@@ -143,9 +146,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 )
             }
 
-            // Initialize Ollama client if embeddings enabled
-            if (uiState.value.embeddingsEnabled) {
+            // Initialize Ollama client if embeddings or project docs enabled
+            if (uiState.value.embeddingsEnabled || uiState.value.appSettings.codeAssistantSettings.projectDocsEnabled) {
                 ollamaClient = OllamaClient()
+                projectDocsService.updateOllamaClient(ollamaClient!!)
             }
 
 //            initializeTaskReminder()
@@ -302,6 +306,103 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                internalMessages.filterIsInstance<InternalMessage.Regular>().size >= 10
     }
 
+    private suspend fun enrichMessageWithProjectDocs(content: String): String {
+        val settings = uiState.value.codeAssistantSettings
+
+        // Skip if disabled or no working directory
+        if (!settings.enabled || !settings.projectDocsEnabled ||
+            settings.workingDirectory.isNullOrBlank() || ollamaClient == null) {
+            return content
+        }
+
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                val workingDir = java.io.File(settings.workingDirectory)
+
+                // Get or initialize project docs embedding
+                var embeddingFile = projectDocsService.getProjectDocsEmbeddingFile(workingDir)
+
+                // Check staleness
+                val isStale = embeddingFile == null ||
+                             projectDocsService.isProjectDocsStale(workingDir)
+
+                if (isStale) {
+                    // Silent background initialization
+                    println("[ProjectDocs] Initializing project documentation embeddings...")
+                    val result = projectDocsService.initializeProjectDocs(workingDir)
+                    result.onSuccess { file ->
+                        embeddingFile = file
+                        println("[ProjectDocs] Successfully initialized: ${file.name}")
+                        // Update settings metadata
+                        updateProjectDocsMetadata(workingDir)
+                    }.onFailure { error ->
+                        println("[ProjectDocs] Initialization failed: ${error.message}")
+                        // Don't block user - continue without project docs
+                        return@withContext content
+                    }
+                }
+
+                if (embeddingFile == null || !embeddingFile.exists()) {
+                    return@withContext content
+                }
+
+                // Search project docs
+                println("[ProjectDocs] Searching project documentation...")
+                val searchResults = EmbeddingSearch.searchSimilarChunks(
+                    query = content,
+                    embeddingFile = embeddingFile,
+                    ollamaClient = ollamaClient!!,
+                    topK = 2,  // User preference: 2 chunks
+                    threshold = 0.6f,  // Higher threshold for documentation
+                    useMmr = true,
+                    mmrLambda = 0.7f  // Favor relevance over diversity
+                )
+
+                if (searchResults.isEmpty()) {
+                    println("[ProjectDocs] No relevant documentation found")
+                    return@withContext content
+                }
+
+                // Format context
+                val contextString = buildString {
+                    appendLine("=== Project Documentation Context ===")
+                    appendLine()
+                    searchResults.forEachIndexed { index, result ->
+                        appendLine("Doc ${index + 1}: ${result.embeddingFileName}")
+                        appendLine("  Similarity: ${"%.3f".format(result.similarity)}")
+                        appendLine()
+                        appendLine(result.chunk.text)
+                        appendLine()
+                    }
+                    appendLine("=== End Project Documentation ===")
+                    appendLine()
+                }
+
+                return@withContext "$contextString$content"
+
+            } catch (e: Exception) {
+                println("[ProjectDocs] Error enriching with project docs: ${e.message}")
+                e.printStackTrace()
+                return@withContext content
+            }
+        }
+    }
+
+    private fun updateProjectDocsMetadata(workingDir: java.io.File) {
+        scope.launch {
+            try {
+                val docs = projectDocsService.discoverProjectDocs(workingDir)
+                val newSettings = uiState.value.codeAssistantSettings.copy(
+                    projectDocsLastInitialized = System.currentTimeMillis(),
+                    projectDocsSourceFiles = docs.map { it.path }
+                )
+                updateCodeAssistantSettings(newSettings)
+            } catch (e: Exception) {
+                println("[ProjectDocs] Failed to update metadata: ${e.message}")
+            }
+        }
+    }
+
     private suspend fun enrichMessageWithEmbeddings(content: String): String {
         if (!uiState.value.embeddingsEnabled || uiState.value.selectedEmbeddingFile == null || ollamaClient == null) {
             return content
@@ -414,8 +515,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 }
 
                 // Normal message processing continues...
+                // Enrich message with project documentation if enabled
+                val enrichedWithProjectDocs = enrichMessageWithProjectDocs(content)
+
                 // Enrich message with embeddings if enabled
-                val enrichedWithEmbeddings = enrichMessageWithEmbeddings(content)
+                val enrichedWithEmbeddings = enrichMessageWithEmbeddings(enrichedWithProjectDocs)
 
                 // Enrich message with code context if enabled
                 val enrichedWithCodeContext = enrichMessageWithCodeContext(enrichedWithEmbeddings)
@@ -936,6 +1040,13 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 codeAssistantWorkingDir = settings.workingDirectory,
                 codeAssistantSettings = settings
             )
+        }
+
+        // Initialize Ollama client if project docs enabled but not yet initialized
+        if (settings.projectDocsEnabled && ollamaClient == null) {
+            ollamaClient = OllamaClient()
+            projectDocsService.updateOllamaClient(ollamaClient!!)
+            println("[ProjectDocs] Initialized OllamaClient for project documentation")
         }
 
         // Save to persistent storage

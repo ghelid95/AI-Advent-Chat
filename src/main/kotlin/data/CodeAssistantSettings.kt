@@ -18,5 +18,10 @@ data class CodeAssistantSettings(
     val gitIncludeDiffs: Boolean = true,
     val gitIncludeHistory: Boolean = true,
     val gitMaxDiffLines: Int = 500,
-    val gitMaxCommits: Int = 5
+    val gitMaxCommits: Int = 5,
+
+    // Project documentation RAG settings
+    val projectDocsEnabled: Boolean = true, // Default enabled
+    val projectDocsLastInitialized: Long? = null,
+    val projectDocsSourceFiles: List<String>? = null // Track source files for staleness detection
 )

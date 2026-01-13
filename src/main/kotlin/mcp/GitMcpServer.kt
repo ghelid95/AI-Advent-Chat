@@ -171,10 +171,26 @@ class GitMcpServer {
                 .redirectErrorStream(true)
                 .start()
 
+            // Read output in a separate thread to prevent deadlock
+            val outputBuilder = StringBuilder()
+            val readerThread = Thread {
+                try {
+                    process.inputStream.bufferedReader().use { reader ->
+                        reader.forEachLine { line ->
+                            outputBuilder.appendLine(line)
+                        }
+                    }
+                } catch (e: Exception) {
+                    log("Error reading process output: ${e.message}")
+                }
+            }
+            readerThread.start()
+
             val completed = process.waitFor(timeout, TimeUnit.SECONDS)
 
             if (!completed) {
                 process.destroyForcibly()
+                readerThread.interrupt()
                 return McpToolCallResult(
                     content = listOf(McpToolContent(
                         type = "text",
@@ -184,7 +200,10 @@ class GitMcpServer {
                 )
             }
 
-            val output = process.inputStream.bufferedReader().readText()
+            // Wait for reader thread to finish
+            readerThread.join(1000)
+
+            val output = outputBuilder.toString()
             val exitCode = process.exitValue()
 
             if (exitCode != 0) {

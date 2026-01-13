@@ -38,6 +38,9 @@ fun AssistantSettingsDialog(
     var gitMaxDiffLines by remember { mutableStateOf(settings.gitMaxDiffLines.toString()) }
     var gitMaxCommits by remember { mutableStateOf(settings.gitMaxCommits.toString()) }
 
+    // Project documentation settings
+    var projectDocsEnabled by remember { mutableStateOf(settings.projectDocsEnabled) }
+
     var errorMessage by remember { mutableStateOf("") }
     var projectInfo by remember { mutableStateOf<String?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
@@ -493,6 +496,84 @@ fun AssistantSettingsDialog(
                     }
                 }
 
+                // Project Documentation Settings
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    "Project Documentation (Auto RAG)",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    "Automatically enrich queries with project docs (README, CONTRIBUTING, docs/)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = projectDocsEnabled,
+                                onCheckedChange = { projectDocsEnabled = it },
+                                enabled = enabled
+                            )
+                        }
+
+                        // Show metadata if initialized
+                        if (projectDocsEnabled && enabled && settings.projectDocsLastInitialized != null) {
+                            Divider()
+
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val lastInit = remember(settings.projectDocsLastInitialized) {
+                                    val instant = java.time.Instant.ofEpochMilli(settings.projectDocsLastInitialized!!)
+                                    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                        .withZone(java.time.ZoneId.systemDefault())
+                                    formatter.format(instant)
+                                }
+
+                                Text(
+                                    "Last initialized: $lastInit",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                if (!settings.projectDocsSourceFiles.isNullOrEmpty()) {
+                                    val docNames = remember(settings.projectDocsSourceFiles) {
+                                        settings.projectDocsSourceFiles!!.joinToString(", ") { path ->
+                                            File(path).name
+                                        }
+                                    }
+                                    Text(
+                                        "Docs: $docNames",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Text(
+                                    "Embeddings will automatically update when documentation files change",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Error Message
                 if (errorMessage.isNotEmpty()) {
                     Card(
@@ -583,7 +664,10 @@ fun AssistantSettingsDialog(
                                 gitIncludeDiffs = gitIncludeDiffs,
                                 gitIncludeHistory = gitIncludeHistory,
                                 gitMaxDiffLines = gitMaxDiffLinesInt ?: 500,
-                                gitMaxCommits = gitMaxCommitsInt ?: 5
+                                gitMaxCommits = gitMaxCommitsInt ?: 5,
+                                projectDocsEnabled = projectDocsEnabled,
+                                projectDocsLastInitialized = settings.projectDocsLastInitialized,
+                                projectDocsSourceFiles = settings.projectDocsSourceFiles
                             )
 
                             onSave(updatedSettings)
