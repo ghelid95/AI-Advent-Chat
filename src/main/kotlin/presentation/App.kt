@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Compress
@@ -50,6 +51,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showMcpSettingsDialog by remember { mutableStateOf(false) }
     var showEmbeddingsDialog by remember { mutableStateOf(false) }
     var showAssistantSettingsDialog by remember { mutableStateOf(false) }
+    var showIssueTicketsDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
     val listState = rememberLazyListState()
 
@@ -134,6 +136,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             Icon(
                                 Icons.Default.Code,
                                 contentDescription = "Code Assistant",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showIssueTicketsDialog = true }) {
+                            Icon(
+                                Icons.Default.BugReport,
+                                contentDescription = "Issue Tickets",
                                 tint = Color.White
                             )
                         }
@@ -487,6 +496,17 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                     viewModel.updateCodeAssistantSettings(settings)
                     showAssistantSettingsDialog = false
                 }
+            )
+        }
+
+        if (showIssueTicketsDialog) {
+            IssueTicketsDialog(
+                onDismiss = { showIssueTicketsDialog = false },
+                onResolveTicket = { ticket ->
+                    viewModel.resolveTicketWithAI(ticket)
+                },
+                isResolving = viewModel.uiState.value.isResolvingTicket,
+                resolvingTicketId = viewModel.uiState.value.resolvingTicketId
             )
         }
 

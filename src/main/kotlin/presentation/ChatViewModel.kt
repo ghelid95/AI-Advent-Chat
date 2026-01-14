@@ -49,7 +49,9 @@ data class ChatUiState(
     val codeAssistantWorkingDir: String? = null,
     val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings(),
     val showTaskReminderDialog: Boolean = false,
-    val taskReminderSummary: String = ""
+    val taskReminderSummary: String = "",
+    val isResolvingTicket: Boolean = false,
+    val resolvingTicketId: String? = null
 )
 
 class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
@@ -109,6 +111,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     // Task reminder support
     private var taskReminderManager: TaskReminderManager? = null
+
+    // Issue resolver support
+    private var issueResolverService: IssueResolverService? = null
+    private val issueTicketStorage = IssueTicketStorage()
 
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
         return when (vendor) {
@@ -1488,6 +1494,63 @@ Provide ONLY the summary text.
                 }
 
                 loadSessionsList()
+            }
+        }
+    }
+
+    // Issue Ticket Resolution
+
+    fun resolveTicketWithAI(ticket: IssueTicket) {
+        if (uiState.value.isResolvingTicket) return
+
+        updateState {
+            copy(
+                isResolvingTicket = true,
+                resolvingTicketId = ticket.id,
+                errorMessage = null
+            )
+        }
+
+        scope.launch {
+            try {
+                // Initialize resolver service if needed
+                if (issueResolverService == null) {
+                    issueResolverService = IssueResolverService(
+                        client = client,
+                        mcpServerManager = mcpServerManager,
+                        ticketStorage = issueTicketStorage
+                    )
+                }
+
+                println("[IssueResolver] Starting resolution for ticket: ${ticket.id}")
+
+                val result = issueResolverService!!.resolveAndSave(
+                    ticket = ticket,
+                    availableTools = availableTools.toList(),
+                    systemPrompt = uiState.value.systemPrompt,
+                    model = uiState.value.selectedModel,
+                    maxIterations = uiState.value.pipelineMaxIterations
+                )
+
+                result.onSuccess { resolution ->
+                    println("[IssueResolver] Successfully resolved ticket: ${ticket.id}")
+                    println("[IssueResolver] Tools used: ${resolution.toolsUsed}")
+                    println("[IssueResolver] Related tickets: ${resolution.relatedTicketIds}")
+                }.onFailure { error ->
+                    println("[IssueResolver] Failed to resolve ticket: ${error.message}")
+                    updateState { copy(errorMessage = "Failed to resolve ticket: ${error.message}") }
+                }
+            } catch (e: Exception) {
+                println("[IssueResolver] Exception: ${e.message}")
+                e.printStackTrace()
+                updateState { copy(errorMessage = "Error resolving ticket: ${e.message}") }
+            } finally {
+                updateState {
+                    copy(
+                        isResolvingTicket = false,
+                        resolvingTicketId = null
+                    )
+                }
             }
         }
     }

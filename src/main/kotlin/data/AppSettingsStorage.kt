@@ -74,6 +74,15 @@ class AppSettingsStorage {
                     updatedSettings
                 }
 
+                // Auto-add issue tickets server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "issue-tickets-server" }) {
+                    println("[Settings] Issue tickets server not found, adding it automatically")
+                    needsSave = true
+                    addIssueTicketsServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
                 updatedSettings
             }
 
@@ -157,6 +166,31 @@ class AppSettingsStorage {
         val projectDocsServer = createProjectDocsServerConfig()
         return settings.copy(
             mcpServers = settings.mcpServers + projectDocsServer
+        )
+    }
+
+    private fun addIssueTicketsServer(settings: AppSettings): AppSettings {
+        val issueTicketsServer = createIssueTicketsServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + issueTicketsServer
+        )
+    }
+
+    private fun createIssueTicketsServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-issue-tickets-server.bat" else "run-mcp-issue-tickets-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating issue tickets server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "issue-tickets-server",
+            name = "Issue Tickets Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),
+            enabled = true
         )
     }
 
