@@ -104,3 +104,12 @@ tasks.register<JavaExec>("runMcpIssueTicketsServer") {
     standardOutput = System.out
     errorOutput = System.err
 }
+
+// Custom task to run MCP Task Board Server
+tasks.register<JavaExec>("runMcpTaskBoardServer") {
+    mainClass.set("mcp.TaskBoardMcpServerKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    standardInput = System.`in`
+    standardOutput = System.out
+    errorOutput = System.err
+}

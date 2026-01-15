@@ -12,7 +12,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.key.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assistant
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
@@ -52,7 +55,17 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showEmbeddingsDialog by remember { mutableStateOf(false) }
     var showAssistantSettingsDialog by remember { mutableStateOf(false) }
     var showIssueTicketsDialog by remember { mutableStateOf(false) }
+    var showTaskBoardDialog by remember { mutableStateOf(false) }
+    var showProjectAssistantDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
+
+    // Create Project Assistant ViewModel (lazy initialization)
+    val projectAssistantViewModel = remember {
+        ProjectAssistantViewModel(
+            apiClient = viewModel.getApiClient(),
+            mcpServerManager = viewModel.getMcpServerManager()
+        )
+    }
     val listState = rememberLazyListState()
 
     LaunchedEffect(viewModel.messages.size) {
@@ -143,6 +156,20 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             Icon(
                                 Icons.Default.BugReport,
                                 contentDescription = "Issue Tickets",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showTaskBoardDialog = true }) {
+                            Icon(
+                                Icons.Default.Assignment,
+                                contentDescription = "Task Board",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showProjectAssistantDialog = true }) {
+                            Icon(
+                                Icons.Default.Assistant,
+                                contentDescription = "Project Assistant",
                                 tint = Color.White
                             )
                         }
@@ -387,7 +414,20 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                             OutlinedTextField(
                                 value = inputText,
                                 onValueChange = { inputText = it },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onKeyEvent { event ->
+                                        if (event.key == Key.Enter && event.type == KeyEventType.KeyDown) {
+                                            if (!event.isShiftPressed) {
+                                                captureMessage()
+                                                true
+                                            } else {
+                                                false // Allow Shift+Enter for newline if needed
+                                            }
+                                        } else {
+                                            false
+                                        }
+                                    },
                                 placeholder = {
                                     Text(
                                         if (viewModel.uiState.value.isCompacting) "Compacting messages..."
@@ -507,6 +547,19 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                 },
                 isResolving = viewModel.uiState.value.isResolvingTicket,
                 resolvingTicketId = viewModel.uiState.value.resolvingTicketId
+            )
+        }
+
+        if (showTaskBoardDialog) {
+            TaskBoardDialog(
+                onDismiss = { showTaskBoardDialog = false }
+            )
+        }
+
+        if (showProjectAssistantDialog) {
+            ProjectAssistantDialog(
+                viewModel = projectAssistantViewModel,
+                onDismiss = { showProjectAssistantDialog = false }
             )
         }
 

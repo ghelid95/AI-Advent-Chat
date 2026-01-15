@@ -116,6 +116,12 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private var issueResolverService: IssueResolverService? = null
     private val issueTicketStorage = IssueTicketStorage()
 
+    // Expose MCP server manager for Project Assistant
+    fun getMcpServerManager(): McpServerManager = mcpServerManager
+
+    // Expose API client for Project Assistant
+    fun getApiClient(): ApiClient = client
+
     private fun createClient(vendor: Vendor, apiKey: String): ApiClient {
         return when (vendor) {
             Vendor.ANTHROPIC -> ClaudeClient(apiKey)

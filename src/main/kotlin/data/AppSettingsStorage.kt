@@ -83,6 +83,15 @@ class AppSettingsStorage {
                     updatedSettings
                 }
 
+                // Auto-add task board server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "task-board-server" }) {
+                    println("[Settings] Task board server not found, adding it automatically")
+                    needsSave = true
+                    addTaskBoardServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
                 updatedSettings
             }
 
@@ -209,6 +218,31 @@ class AppSettingsStorage {
             args = emptyList(),
             env = emptyMap(),
             enabled = false  // Disabled by default, user enables when they want it
+        )
+    }
+
+    private fun addTaskBoardServer(settings: AppSettings): AppSettings {
+        val taskBoardServer = createTaskBoardServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + taskBoardServer
+        )
+    }
+
+    private fun createTaskBoardServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-task-board-server.bat" else "run-mcp-task-board-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating task board server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "task-board-server",
+            name = "Task Board Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),
+            enabled = true
         )
     }
 
