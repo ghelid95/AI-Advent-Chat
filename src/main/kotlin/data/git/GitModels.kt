@@ -152,3 +152,56 @@ data class GitContext(
         }
     }
 }
+
+/**
+ * Context for pull request review
+ */
+data class PullRequestContext(
+    val currentBranch: String,
+    val baseBranch: String,
+    val commits: List<GitCommit>,
+    val diffs: List<GitDiff>,
+    val filesChanged: Int,
+    val linesAdded: Int,
+    val linesRemoved: Int
+) {
+    val totalChanges: Int get() = linesAdded + linesRemoved
+
+    companion object {
+        /**
+         * Format PR context for LLM consumption
+         */
+        fun format(context: PullRequestContext): String {
+            return buildString {
+                appendLine("=== Pull Request Review Context ===")
+                appendLine()
+                appendLine("Branch Comparison: ${context.baseBranch} -> ${context.currentBranch}")
+                appendLine("Files Changed: ${context.filesChanged}")
+                appendLine("Lines: +${context.linesAdded} -${context.linesRemoved}")
+                appendLine()
+
+                appendLine("=== Commits (${context.commits.size}) ===")
+                context.commits.forEach { commit ->
+                    appendLine("${commit.shortHash} - ${commit.message}")
+                    appendLine("  ${commit.author} - ${commit.date}")
+                }
+                appendLine()
+
+                appendLine("=== Files Changed ===")
+                context.diffs.forEach { diff ->
+                    appendLine("${diff.file} (${diff.changeType}) +${diff.addedLines} -${diff.removedLines}")
+                }
+                appendLine()
+
+                appendLine("=== Diffs ===")
+                context.diffs.forEach { diff ->
+                    appendLine()
+                    appendLine("File: ${diff.file}")
+                    appendLine(diff.diffText)
+                }
+                appendLine()
+                appendLine("=== End PR Context ===")
+            }
+        }
+    }
+}

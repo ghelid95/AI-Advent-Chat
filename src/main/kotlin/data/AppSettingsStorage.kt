@@ -65,6 +65,24 @@ class AppSettingsStorage {
                     updatedSettings
                 }
 
+                // Auto-add project docs server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "project-docs-server" }) {
+                    println("[Settings] Project docs server not found, adding it automatically")
+                    needsSave = true
+                    addProjectDocsServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
+                // Auto-add issue tickets server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "issue-tickets-server" }) {
+                    println("[Settings] Issue tickets server not found, adding it automatically")
+                    needsSave = true
+                    addIssueTicketsServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
                 updatedSettings
             }
 
@@ -141,6 +159,56 @@ class AppSettingsStorage {
             args = emptyList(),
             env = emptyMap(),
             enabled = true
+        )
+    }
+
+    private fun addProjectDocsServer(settings: AppSettings): AppSettings {
+        val projectDocsServer = createProjectDocsServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + projectDocsServer
+        )
+    }
+
+    private fun addIssueTicketsServer(settings: AppSettings): AppSettings {
+        val issueTicketsServer = createIssueTicketsServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + issueTicketsServer
+        )
+    }
+
+    private fun createIssueTicketsServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-issue-tickets-server.bat" else "run-mcp-issue-tickets-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating issue tickets server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "issue-tickets-server",
+            name = "Issue Tickets Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),
+            enabled = true
+        )
+    }
+
+    private fun createProjectDocsServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-project-docs-server.bat" else "run-mcp-project-docs-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating project docs server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "project-docs-server",
+            name = "Project Documentation Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),
+            enabled = false  // Disabled by default, user enables when they want it
         )
     }
 

@@ -21,7 +21,8 @@ class CommandExecutor(
         "search" to SearchCommandHandler(fileSearchService, contentSearchService),
         "analyze" to AnalyzeCommandHandler(),
         "context" to ContextCommandHandler(),
-        "git" to GitCommandHandler(gitRepositoryService)
+        "git" to GitCommandHandler(gitRepositoryService),
+        "review-pr" to ReviewPrCommandHandler(gitRepositoryService)
     )
 
     /**

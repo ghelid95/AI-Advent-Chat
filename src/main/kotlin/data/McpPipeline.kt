@@ -11,7 +11,8 @@ import kotlinx.coroutines.delay
 class McpPipeline(
     private val client: ApiClient,
     private val mcpServerManager: McpServerManager,
-    private val maxIterations: Int = 5
+    private val maxIterations: Int = 5,
+    private val iterationDelayMs: Long = 100L  // Delay between iterations to avoid rate limits
 ) {
     /**
      * Execute a pipeline with iterative tool calls.
@@ -184,8 +185,8 @@ class McpPipeline(
                         content = ChatMessageContent.ContentBlocks(toolResults)
                     ))
 
-                    // Small delay before next iteration to avoid rate limiting
-                    delay(100)
+                    // Delay before next iteration to avoid rate limiting
+                    delay(iterationDelayMs)
                 } else {
                     // No more tool use, pipeline complete
                     break
