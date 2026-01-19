@@ -68,6 +68,7 @@ fun ProjectAssistantDialog(
                     onSettingsClick = { showSettings = true },
                     onClearClick = { viewModel.clearConversation() },
                     onRefreshClick = { viewModel.refreshContext() },
+                    onDeployClick = { viewModel.startDeployPipeline() },
                     onDismiss = onDismiss
                 )
 
@@ -143,6 +144,7 @@ private fun ProjectAssistantHeader(
     onSettingsClick: () -> Unit,
     onClearClick: () -> Unit,
     onRefreshClick: () -> Unit,
+    onDeployClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Surface(
@@ -195,6 +197,30 @@ private fun ProjectAssistantHeader(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Deploy button
+                Button(
+                    onClick = onDeployClick,
+                    enabled = state.toolsLoaded && !state.isLoading && !state.deployInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4CAF50),
+                        disabledContainerColor = Color(0xFF2E7D32).copy(alpha = 0.5f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.RocketLaunch,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        if (state.deployInProgress) "Deploying..." else "Deploy",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 IconButton(onClick = onRefreshClick) {
                     Icon(
                         Icons.Default.Refresh,

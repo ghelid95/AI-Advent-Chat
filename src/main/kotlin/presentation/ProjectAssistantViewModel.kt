@@ -610,6 +610,226 @@ Current project context may be provided at the start of each message. Use this c
     }
 
     /**
+     * Start the deployment pipeline.
+     * This triggers an interactive flow where the agent:
+     * 1. Builds the project artifacts
+     * 2. Gathers commit history for release notes
+     * 3. Asks user about release details
+     * 4. Shows draft release notes
+     * 5. Publishes the release to GitHub
+     */
+    fun startDeployPipeline() {
+        if (uiState.value.isLoading || uiState.value.deployInProgress) return
+
+        viewModelScope.launch {
+            updateState { copy(deployInProgress = true, isLoading = true, errorMessage = null, gatheringContext = true) }
+
+            try {
+                // Add a system message indicating deploy mode
+                val deployMessage = ProjectAssistantMessage(
+                    id = java.util.UUID.randomUUID().toString(),
+                    content = "🚀 Starting deployment pipeline...",
+                    isUser = true,
+                    timestamp = System.currentTimeMillis()
+                )
+                messages.add(deployMessage)
+
+                // Gather project context first (like regular chat does)
+                val contextParts = mutableListOf<String>()
+
+                // Gather all relevant context in parallel
+                val deferreds = listOf(
+                    viewModelScope.async { gatherGitContext() },
+                    viewModelScope.async { gatherTasksContext() },
+                    viewModelScope.async { gatherDocsContext() }
+                )
+
+                deferreds.awaitAll().filterNotNull().forEach { context ->
+                    if (context.isNotBlank()) {
+                        contextParts.add(context)
+                    }
+                }
+
+                updateState { copy(gatheringContext = false) }
+
+                // Create the deploy prompt with gathered context
+                val deployPrompt = createDeployPrompt(contextParts)
+                conversationHistory.add(ChatMessage(role = "user", content = deployPrompt))
+
+                // Execute with deploy-specific settings (more iterations for the multi-step process)
+                val result = executeDeployPipeline(deployPrompt)
+
+                result.onSuccess { pipelineResult ->
+                    val assistantMessage = ProjectAssistantMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        content = pipelineResult.finalResponse,
+                        isUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        toolsUsed = pipelineResult.uniqueToolsUsed.toList(),
+                        usage = pipelineResult.totalUsage
+                    )
+                    messages.add(assistantMessage)
+                    conversationHistory.add(ChatMessage(role = "assistant", content = pipelineResult.finalResponse))
+                    updateStats(pipelineResult.totalUsage)
+                    saveConversation()
+                }
+
+                result.onFailure { error ->
+                    updateState { copy(errorMessage = "Deploy failed: ${error.message}") }
+                }
+
+            } catch (e: Exception) {
+                updateState { copy(errorMessage = "Deploy error: ${e.message}") }
+            } finally {
+                updateState { copy(deployInProgress = false, isLoading = false, gatheringContext = false) }
+            }
+        }
+    }
+
+    /**
+     * Create the deploy prompt that instructs the agent on the deployment workflow.
+     */
+    private fun createDeployPrompt(contextParts: List<String>): String {
+        val contextSection = if (contextParts.isNotEmpty()) {
+            """
+## Pre-gathered Project Context
+Here is the current project context that was automatically gathered:
+
+${contextParts.joinToString("\n\n---\n\n")}
+
+---
+
+"""
+        } else {
+            ""
+        }
+
+        return """You are now in DEPLOYMENT MODE. Please execute the following deployment workflow step by step.
+
+$contextSection
+## Step 1: Gather Additional Information (if needed)
+Some context has already been gathered above. Now gather any additional information needed:
+- Use `github_get_repo_info` to get repository details (owner and repo name - REQUIRED for release)
+- Use `github_list_releases` to check existing releases and determine next version
+- Use `github_list_commits` to get recent commit history for release notes (last 10-20 commits)
+- Use `list_build_artifacts` to check if there are existing build artifacts
+
+## Step 2: Ask About Release Details
+Based on the gathered information, ask the user these questions:
+1. What version number should this release have? (suggest based on previous releases if any)
+2. What type of release is this? (major feature, minor update, bug fix, etc.)
+3. Should this be a pre-release or full release?
+4. Are there any specific highlights or breaking changes to mention?
+
+Wait for user response before proceeding.
+
+## Step 3: Build Platform Installers
+After getting user input about version, ask the user which platforms to build for:
+- **Windows**: Use `build_project` with task "packageMsi" (creates .msi installer) or "packageExe" (creates .exe installer)
+- **macOS**: Use `build_project` with task "packageDmg" (creates .dmg disk image)
+- **Linux**: Use `build_project` with task "packageDeb" (creates .deb package)
+
+For a multiplatform release, you may need to build multiple times with different tasks.
+IMPORTANT: Do NOT build JAR files - always build native installers (.msi, .exe, .dmg, .deb)
+
+After each build:
+- If build fails, report the error and ask if user wants to retry or abort
+- Use `list_build_artifacts` to find the generated installer files
+- Look for artifacts in: build/compose/binaries/main/msi/, build/compose/binaries/main/dmg/, build/compose/binaries/main/exe/, build/compose/binaries/main/deb/
+
+## Step 4: Draft Release Notes
+Create draft release notes including:
+- Version number and release title
+- Summary of changes based on commit history
+- List of new features, improvements, and bug fixes
+- Any breaking changes or migration notes
+- Present the draft to the user and ask for approval or modifications
+
+## Step 5: Publish Release
+After user approves:
+- Use `github_create_release` to create the release with the approved notes
+- Use `github_upload_release_asset` to upload the build artifacts
+- Confirm successful deployment with links to the release
+
+IMPORTANT GUIDELINES:
+- Always wait for user confirmation before building or publishing
+- If any step fails, explain what went wrong and ask how to proceed
+- Be conversational and helpful throughout the process
+- Show progress at each step
+
+Please start by gathering project information (Step 1)."""
+    }
+
+    /**
+     * Execute the deploy pipeline with special settings.
+     * NOTE: We use empty context to avoid compaction issues - all context is in the prompt itself.
+     */
+    private suspend fun executeDeployPipeline(prompt: String): Result<PipelineResult> {
+        // For deploy, we want ALL tools including build and GitHub tools
+        val deployTools = availableTools.filter { (_, tool) ->
+            tool.name !in listOf("execute_command", "write_file") // Only exclude dangerous tools
+        }
+
+        println("[ProjectAssistant] Deploy pipeline using ${deployTools.size} tools")
+
+        // IMPORTANT: Use empty context for deployment to avoid compaction removing critical info
+        // All necessary context is included in the deploy prompt itself
+        val contextMessages = emptyList<ChatMessage>()
+
+        val pipeline = chatService.createPipeline(
+            maxIterations = 20, // More iterations for deploy workflow (increased from 15)
+            iterationDelayMs = 200L
+        )
+
+        return pipeline.execute(
+            initialPrompt = prompt,
+            context = contextMessages,
+            systemPrompt = getDeploySystemPrompt(),
+            temperature = 0.3f,
+            model = uiState.value.model,
+            maxTokens = 4096,
+            availableTools = deployTools
+        )
+    }
+
+    /**
+     * System prompt specifically for deployment mode.
+     */
+    private fun getDeploySystemPrompt(): String = """You are a deployment assistant for a Kotlin/Compose Desktop multiplatform project.
+Your role is to guide the user through building native installers and publishing releases to GitHub.
+
+You have access to these tool categories:
+- GitHub tools: Create releases, upload assets, get repo info, list commits, list releases
+- Build tools: Build project with gradle, list build artifacts
+- Git tools: Check git status, branches, and commits
+
+CRITICAL - BUILD NATIVE INSTALLERS, NOT JARs:
+This is a desktop application that needs native installers for distribution:
+- For Windows: Use task "packageMsi" (creates .msi installer) - PREFERRED
+- For Windows alternative: Use task "packageExe" (creates .exe installer)
+- For macOS: Use task "packageDmg" (creates .dmg disk image)
+- For Linux: Use task "packageDeb" (creates .deb package)
+
+NEVER build or upload JAR files for release. Users expect native installers.
+
+Artifact locations after build:
+- Windows MSI: build/compose/binaries/main/msi/
+- Windows EXE: build/compose/binaries/main/exe/
+- macOS DMG: build/compose/binaries/main/dmg/
+- Linux DEB: build/compose/binaries/main/deb/
+
+IMPORTANT BEHAVIORS:
+1. Always be conversational and explain what you're doing
+2. Ask which platforms the user wants to build for (Windows/macOS/Linux)
+3. Ask for confirmation before any destructive or publishing actions
+4. If something fails, explain clearly and offer solutions
+5. Show progress and celebrate successes
+6. Format release notes in proper markdown
+7. Upload ALL built installers to the release (not just one)
+
+Current project context may be provided. Use this to inform your actions."""
+
+    /**
      * Save conversation to disk.
      */
     private fun saveConversation() {
@@ -681,6 +901,7 @@ data class ProjectAssistantUiState(
     val toolsLoaded: Boolean = false,
     val model: String = "claude-3-haiku-20240307",
     val maxIterations: Int = 8,
+    val deployInProgress: Boolean = false,
     // Stats
     val totalTokens: Int = 0,
     val totalInputTokens: Int = 0,

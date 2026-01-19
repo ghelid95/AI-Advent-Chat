@@ -92,6 +92,15 @@ class AppSettingsStorage {
                     updatedSettings
                 }
 
+                // Auto-add GitHub server if not present
+                updatedSettings = if (!updatedSettings.mcpServers.any { it.id == "github-server" }) {
+                    println("[Settings] GitHub server not found, adding it automatically")
+                    needsSave = true
+                    addGitHubServer(updatedSettings)
+                } else {
+                    updatedSettings
+                }
+
                 updatedSettings
             }
 
@@ -242,6 +251,31 @@ class AppSettingsStorage {
             command = scriptPath,
             args = emptyList(),
             env = emptyMap(),
+            enabled = true
+        )
+    }
+
+    private fun addGitHubServer(settings: AppSettings): AppSettings {
+        val gitHubServer = createGitHubServerConfig()
+        return settings.copy(
+            mcpServers = settings.mcpServers + gitHubServer
+        )
+    }
+
+    private fun createGitHubServerConfig(): McpServerConfig {
+        val projectDir = detectProjectDirectory()
+        val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+        val scriptName = if (isWindows) "run-mcp-github-server.bat" else "run-mcp-github-server.sh"
+        val scriptPath = File(projectDir, scriptName).absolutePath
+
+        println("[Settings] Creating GitHub server config with script: $scriptPath")
+
+        return McpServerConfig(
+            id = "github-server",
+            name = "GitHub Server",
+            command = scriptPath,
+            args = emptyList(),
+            env = emptyMap(),  // GITHUB_TOKEN should be set in system environment
             enabled = true
         )
     }
