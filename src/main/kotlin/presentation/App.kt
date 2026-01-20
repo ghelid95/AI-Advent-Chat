@@ -1267,6 +1267,7 @@ fun VendorSwitchDialog(
     val envVarName = when (vendor) {
         Vendor.ANTHROPIC -> "CLAUDE_API_KEY"
         Vendor.PERPLEXITY -> "PERPLEXITY_API_KEY"
+        Vendor.OLLAMA -> null  // Ollama doesn't need an API key
     }
 
     if (apiKey != null) {

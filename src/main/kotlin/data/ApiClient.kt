@@ -18,5 +18,6 @@ interface ApiClient {
 
 enum class Vendor(val displayName: String) {
     ANTHROPIC("Claude"),
-    PERPLEXITY("Perplexity")
+    PERPLEXITY("Perplexity"),
+    OLLAMA("Ollama")
 }

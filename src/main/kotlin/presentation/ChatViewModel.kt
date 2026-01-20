@@ -126,6 +126,7 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         return when (vendor) {
             Vendor.ANTHROPIC -> ClaudeClient(apiKey)
             Vendor.PERPLEXITY -> PerplexityClient(apiKey)
+            Vendor.OLLAMA -> OllamaLlmClient()  // No API key needed for local Ollama
         }
     }
 
@@ -301,10 +302,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     content = internalMsg.content
                 )
                 is InternalMessage.CompactedSummary -> ChatMessage(
-                    // Claude uses "assistant" for summaries, Perplexity needs "system"
+                    // Claude uses "assistant" for summaries, Perplexity needs "system", Ollama uses "assistant"
                     role = when (uiState.value.currentVendor) {
                         Vendor.ANTHROPIC -> "assistant"
                         Vendor.PERPLEXITY -> "system"
+                        Vendor.OLLAMA -> "assistant"
                     },
                     content = "[Previous conversation summary: ${internalMsg.summaryContent}]"
                 )
@@ -1293,6 +1295,7 @@ Provide ONLY the summary text.
         val defaultModel = when (vendor) {
             Vendor.ANTHROPIC -> "claude-sonnet-4-20250514"
             Vendor.PERPLEXITY -> "sonar"
+            Vendor.OLLAMA -> "gpt-oss:20b"
         }
 
         updateState {
@@ -1402,6 +1405,7 @@ Provide ONLY the summary text.
                     currentApiKey = when (session.settings.vendor) {
                         Vendor.ANTHROPIC -> System.getenv("CLAUDE_API_KEY") ?: ""
                         Vendor.PERPLEXITY -> System.getenv("PERPLEXITY_API_KEY") ?: ""
+                        Vendor.OLLAMA -> ""  // Ollama doesn't need an API key
                     }
                     client = createClient(session.settings.vendor, currentApiKey)
                     availableModels.clear()

@@ -19,6 +19,7 @@ fun getApiKey(vendor: Vendor): String? {
     val envVarName = when (vendor) {
         Vendor.ANTHROPIC -> "CLAUDE_API_KEY"
         Vendor.PERPLEXITY -> "PERPLEXITY_API_KEY"
+        Vendor.OLLAMA -> return ""  // Ollama doesn't need an API key (local)
     }
     val value = System.getenv(envVarName)
     println("Checking environment variable: $envVarName = ${if (value != null) "[SET]" else "[NOT SET]"}")
@@ -26,13 +27,15 @@ fun getApiKey(vendor: Vendor): String? {
 }
 
 fun main() = application {
-    // Try to get Claude API key first, fall back to Perplexity
+    // Try to get Claude API key first, fall back to Perplexity, then Ollama (local)
     val claudeApiKey = getApiKey(Vendor.ANTHROPIC)
     val perplexityApiKey = getApiKey(Vendor.PERPLEXITY)
+    val ollamaApiKey = getApiKey(Vendor.OLLAMA)  // Always returns "" for Ollama
 
     val (initialVendor, initialApiKey) = when {
         claudeApiKey != null -> Vendor.ANTHROPIC to claudeApiKey
         perplexityApiKey != null -> Vendor.PERPLEXITY to perplexityApiKey
+        ollamaApiKey != null -> Vendor.OLLAMA to ollamaApiKey  // Fallback to local Ollama
         else -> null to null
     }
 
