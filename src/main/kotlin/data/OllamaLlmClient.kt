@@ -31,7 +31,13 @@ private data class OllamaMessage(
 @Serializable
 private data class OllamaOptions(
     val temperature: Float? = null,
-    @SerialName("num_predict") val numPredict: Int? = null
+    @SerialName("num_predict") val numPredict: Int? = null,
+    @SerialName("num_ctx") val numCtx: Int? = null,  // Context window size
+    @SerialName("num_gpu") val numGpu: Int? = null,  // Number of GPU layers
+    @SerialName("num_thread") val numThread: Int? = null,  // Number of threads
+    @SerialName("repeat_penalty") val repeatPenalty: Float? = null,  // Penalty for repetition
+    @SerialName("top_k") val topK: Int? = null,  // Top-K sampling
+    @SerialName("top_p") val topP: Float? = null  // Top-P (nucleus) sampling
 )
 
 @Serializable
@@ -117,6 +123,29 @@ class OllamaLlmClient(
 
     override fun supportsTools(): Boolean = false  // Ollama doesn't have native tool support
 
+    /**
+     * Send message with custom Ollama configuration
+     */
+    suspend fun sendMessageWithConfig(
+        messages: List<ChatMessage>,
+        systemPrompt: String,
+        temperature: Float,
+        model: String,
+        maxTokens: Int,
+        config: OllamaOptimizationConfig,
+        tools: List<ClaudeTool>? = null
+    ): Result<LlmMessage> {
+        return sendMessageInternal(
+            messages = messages,
+            systemPrompt = systemPrompt,
+            temperature = temperature,
+            model = model,
+            maxTokens = maxTokens,
+            tools = tools,
+            customConfig = config
+        )
+    }
+
     override suspend fun sendMessage(
         messages: List<ChatMessage>,
         systemPrompt: String,
@@ -124,6 +153,26 @@ class OllamaLlmClient(
         model: String,
         maxTokens: Int,
         tools: List<ClaudeTool>?
+    ): Result<LlmMessage> {
+        return sendMessageInternal(
+            messages = messages,
+            systemPrompt = systemPrompt,
+            temperature = temperature,
+            model = model,
+            maxTokens = maxTokens,
+            tools = tools,
+            customConfig = null
+        )
+    }
+
+    private suspend fun sendMessageInternal(
+        messages: List<ChatMessage>,
+        systemPrompt: String,
+        temperature: Float,
+        model: String,
+        maxTokens: Int,
+        tools: List<ClaudeTool>?,
+        customConfig: OllamaOptimizationConfig?
     ): Result<LlmMessage> {
         return try {
             println("=== Sending request to Ollama API ===")
@@ -167,10 +216,23 @@ class OllamaLlmClient(
                         model = model,
                         messages = ollamaMessages,
                         stream = false,
-                        options = OllamaOptions(
-                            temperature = temperature,
-                            numPredict = maxTokens
-                        )
+                        options = if (customConfig != null) {
+                            OllamaOptions(
+                                temperature = customConfig.temperature,
+                                numPredict = customConfig.maxTokens,
+                                numCtx = customConfig.numCtx,
+                                numGpu = customConfig.numGpu,
+                                numThread = customConfig.numThread,
+                                repeatPenalty = customConfig.repeatPenalty,
+                                topK = customConfig.topK,
+                                topP = customConfig.topP
+                            )
+                        } else {
+                            OllamaOptions(
+                                temperature = temperature,
+                                numPredict = maxTokens
+                            )
+                        }
                     ))
                 }.body()
             }

@@ -57,6 +57,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showIssueTicketsDialog by remember { mutableStateOf(false) }
     var showTaskBoardDialog by remember { mutableStateOf(false) }
     var showProjectAssistantDialog by remember { mutableStateOf(false) }
+    var showOllamaOptimizationDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
 
     // Create Project Assistant ViewModel (lazy initialization)
@@ -171,6 +172,16 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                                 Icons.Default.Assistant,
                                 contentDescription = "Project Assistant",
                                 tint = Color.White
+                            )
+                        }
+                        IconButton(
+                            onClick = { showOllamaOptimizationDialog = true },
+                            enabled = viewModel.uiState.value.currentVendor == Vendor.OLLAMA
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                contentDescription = "Ollama Optimization",
+                                tint = if (viewModel.uiState.value.currentVendor == Vendor.OLLAMA) Color.White else Color.Gray
                             )
                         }
                         IconButton(onClick = { viewModel.clearChat() }) {
@@ -583,6 +594,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
             TaskReminderDialog(
                 taskSummary = viewModel.uiState.value.taskReminderSummary,
                 onDismiss = { viewModel.dismissTaskReminderDialog() }
+            )
+        }
+
+        if (showOllamaOptimizationDialog) {
+            OllamaOptimizationDialog(
+                onDismiss = { showOllamaOptimizationDialog = false },
+                currentModel = viewModel.uiState.value.selectedModel
             )
         }
     }

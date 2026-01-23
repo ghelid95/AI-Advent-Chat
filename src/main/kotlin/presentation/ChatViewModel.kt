@@ -1295,7 +1295,7 @@ Provide ONLY the summary text.
         val defaultModel = when (vendor) {
             Vendor.ANTHROPIC -> "claude-sonnet-4-20250514"
             Vendor.PERPLEXITY -> "sonar"
-            Vendor.OLLAMA -> "gpt-oss:20b"
+            Vendor.OLLAMA -> "mistral:7b"
         }
 
         updateState {
