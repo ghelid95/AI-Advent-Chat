@@ -1,0 +1,162 @@
+[
+  {
+    "event_id": "evt_001",
+    "user_id": 1,
+    "event_type": "page_view",
+    "page": "home",
+    "timestamp": "2024-01-25 10:15:23",
+    "duration_seconds": 45
+  },
+  {
+    "event_id": "evt_002",
+    "user_id": 1,
+    "event_type": "page_view",
+    "page": "products",
+    "timestamp": "2024-01-25 10:16:10",
+    "duration_seconds": 120
+  },
+  {
+    "event_id": "evt_003",
+    "user_id": 1,
+    "event_type": "add_to_cart",
+    "page": "products",
+    "timestamp": "2024-01-25 10:18:15",
+    "product_id": "prod_123"
+  },
+  {
+    "event_id": "evt_004",
+    "user_id": 1,
+    "event_type": "page_view",
+    "page": "cart",
+    "timestamp": "2024-01-25 10:18:20",
+    "duration_seconds": 60
+  },
+  {
+    "event_id": "evt_005",
+    "user_id": 1,
+    "event_type": "checkout",
+    "page": "cart",
+    "timestamp": "2024-01-25 10:19:25",
+    "amount": 99.99
+  },
+  {
+    "event_id": "evt_006",
+    "user_id": 2,
+    "event_type": "page_view",
+    "page": "home",
+    "timestamp": "2024-01-25 10:20:00",
+    "duration_seconds": 30
+  },
+  {
+    "event_id": "evt_007",
+    "user_id": 2,
+    "event_type": "page_view",
+    "page": "products",
+    "timestamp": "2024-01-25 10:20:35",
+    "duration_seconds": 90
+  },
+  {
+    "event_id": "evt_008",
+    "user_id": 2,
+    "event_type": "page_view",
+    "page": "cart",
+    "timestamp": "2024-01-25 10:22:10",
+    "duration_seconds": 0
+  },
+  {
+    "event_id": "evt_009",
+    "user_id": 3,
+    "event_type": "page_view",
+    "page": "home",
+    "timestamp": "2024-01-25 10:25:00",
+    "duration_seconds": 50
+  },
+  {
+    "event_id": "evt_010",
+    "user_id": 3,
+    "event_type": "page_view",
+    "page": "products",
+    "timestamp": "2024-01-25 10:26:00",
+    "duration_seconds": 180
+  },
+  {
+    "event_id": "evt_011",
+    "user_id": 3,
+    "event_type": "add_to_cart",
+    "page": "products",
+    "timestamp": "2024-01-25 10:29:05",
+    "product_id": "prod_456"
+  },
+  {
+    "event_id": "evt_012",
+    "user_id": 3,
+    "event_type": "page_view",
+    "page": "cart",
+    "timestamp": "2024-01-25 10:29:10",
+    "duration_seconds": 45
+  },
+  {
+    "event_id": "evt_013",
+    "user_id": 3,
+    "event_type": "checkout",
+    "page": "cart",
+    "timestamp": "2024-01-25 10:30:00",
+    "amount": 149.99
+  },
+  {
+    "event_id": "evt_014",
+    "user_id": 4,
+    "event_type": "page_view",
+    "page": "home",
+    "timestamp": "2024-01-25 11:00:00",
+    "duration_seconds": 25
+  },
+  {
+    "event_id": "evt_015",
+    "user_id": 4,
+    "event_type": "page_view",
+    "page": "products",
+    "timestamp": "2024-01-25 11:00:30",
+    "duration_seconds": 60
+  },
+  {
+    "event_id": "evt_016",
+    "user_id": 4,
+    "event_type": "page_view",
+    "page": "cart",
+    "timestamp": "2024-01-25 11:01:35",
+    "duration_seconds": 0
+  },
+  {
+    "event_id": "evt_017",
+    "user_id": 5,
+    "event_type": "page_view",
+    "page": "home",
+    "timestamp": "2024-01-25 11:30:00",
+    "duration_seconds": 40
+  },
+  {
+    "event_id": "evt_018",
+    "user_id": 5,
+    "event_type": "page_view",
+    "page": "products",
+    "timestamp": "2024-01-25 11:30:45",
+    "duration_seconds": 150
+  },
+  {
+    "event_id": "evt_019",
+    "user_id": 5,
+    "event_type": "add_to_cart",
+    "page": "products",
+    "timestamp": "2024-01-25 11:33:20",
+    "product_id": "prod_789"
+  },
+  {
+    "event_id": "evt_020",
+    "user_id": 5,
+    "event_type": "checkout",
+    "page": "cart",
+    "timestamp": "2024-01-25 11:34:00",
+    "amount": 79.99
+  }
+]

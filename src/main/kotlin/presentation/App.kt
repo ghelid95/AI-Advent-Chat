@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.key.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Assistant
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.BugReport
@@ -58,6 +59,7 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
     var showTaskBoardDialog by remember { mutableStateOf(false) }
     var showProjectAssistantDialog by remember { mutableStateOf(false) }
     var showOllamaOptimizationDialog by remember { mutableStateOf(false) }
+    var showDataAnalysisDialog by remember { mutableStateOf(false) }
     var pendingVendor by remember { mutableStateOf<Vendor?>(null) }
 
     // Create Project Assistant ViewModel (lazy initialization)
@@ -182,6 +184,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
                                 Icons.Default.Build,
                                 contentDescription = "Ollama Optimization",
                                 tint = if (viewModel.uiState.value.currentVendor == Vendor.OLLAMA) Color.White else Color.Gray
+                            )
+                        }
+                        IconButton(onClick = { showDataAnalysisDialog = true }) {
+                            Icon(
+                                Icons.Default.Analytics,
+                                contentDescription = "Data Analysis",
+                                tint = Color.White
                             )
                         }
                         IconButton(onClick = { viewModel.clearChat() }) {
@@ -600,6 +609,13 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
         if (showOllamaOptimizationDialog) {
             OllamaOptimizationDialog(
                 onDismiss = { showOllamaOptimizationDialog = false },
+                currentModel = viewModel.uiState.value.selectedModel
+            )
+        }
+
+        if (showDataAnalysisDialog) {
+            DataAnalysisDialog(
+                onDismiss = { showDataAnalysisDialog = false },
                 currentModel = viewModel.uiState.value.selectedModel
             )
         }

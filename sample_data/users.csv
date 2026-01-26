@@ -1,0 +1,16 @@
+user_id,name,email,signup_date,country,age,plan,total_purchases,last_login
+1,Alice Johnson,alice@example.com,2024-01-15,USA,28,premium,45,2024-01-24
+2,Bob Smith,bob@example.com,2024-01-16,UK,35,free,0,2024-01-20
+3,Carol White,carol@example.com,2024-01-17,Canada,42,premium,23,2024-01-25
+4,David Brown,david@example.com,2024-01-18,USA,31,basic,12,2024-01-23
+5,Eve Davis,eve@example.com,2024-01-19,Australia,26,premium,67,2024-01-25
+6,Frank Miller,frank@example.com,2024-01-20,USA,39,basic,8,2024-01-22
+7,Grace Lee,grace@example.com,2024-01-21,UK,33,free,0,2024-01-21
+8,Henry Wilson,henry@example.com,2024-01-22,Canada,45,premium,89,2024-01-25
+9,Iris Martinez,iris@example.com,2024-01-23,USA,29,basic,15,2024-01-24
+10,Jack Taylor,jack@example.com,2024-01-24,Australia,37,premium,52,2024-01-25
+11,Karen Anderson,karen@example.com,2024-01-15,UK,41,free,0,2024-01-19
+12,Leo Thomas,leo@example.com,2024-01-16,USA,34,basic,6,2024-01-23
+13,Maria Garcia,maria@example.com,2024-01-17,Canada,27,premium,41,2024-01-25
+14,Nathan Moore,nathan@example.com,2024-01-18,Australia,38,basic,9,2024-01-22
+15,Olivia Jackson,olivia@example.com,2024-01-19,USA,32,free,0,2024-01-20
