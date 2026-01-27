@@ -31,7 +31,7 @@ class PersonalizationLoader {
                 return null
             }
 
-            val personalization = json.decodeFromString<DeveloperPersonalization>(configFile.readText())
+            val personalization = json.decodeFromString<DeveloperPersonalization>(configFile.readText(Charsets.UTF_8))
             println("[Personalization] Loaded developer personalization (enabled: ${personalization.enabled})")
             personalization
         } catch (e: Exception) {
@@ -85,7 +85,7 @@ class PersonalizationLoader {
 
         return try {
             val jsonString = json.encodeToString(DeveloperPersonalization.serializer(), personalization)
-            configFile.writeText(jsonString)
+            configFile.writeText(jsonString, Charsets.UTF_8)
             println("[Personalization] Saved developer personalization to: ${configFile.absolutePath}")
             true
         } catch (e: Exception) {

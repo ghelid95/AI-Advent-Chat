@@ -16,7 +16,9 @@ data class AppSettings(
     val embeddingTopK: Int = 3,
     val embeddingThreshold: Float = 0.5f,
     val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings(),
-    val developerPersonalization: DeveloperPersonalization = DeveloperPersonalization()
+    val developerPersonalization: DeveloperPersonalization = DeveloperPersonalization(),
+    val voiceToTextEnabled: Boolean = false,
+    val voiceLanguage: String? = null // null = auto-detect, or language code like "en", "ru"
 )
 
 class AppSettingsStorage {
@@ -45,7 +47,7 @@ class AppSettingsStorage {
                 needsSave = true
                 createDefaultSettings()
             } else {
-                val loadedSettings = json.decodeFromString<AppSettings>(settingsFile.readText())
+                val loadedSettings = json.decodeFromString<AppSettings>(settingsFile.readText(Charsets.UTF_8))
                 println("[Settings] Loaded app settings with ${loadedSettings.mcpServers.size} MCP servers")
 
                 // Auto-add shell command server if not present
@@ -318,7 +320,7 @@ class AppSettingsStorage {
     fun saveSettings(settings: AppSettings) {
         try {
             val jsonString = json.encodeToString(settings)
-            settingsFile.writeText(jsonString)
+            settingsFile.writeText(jsonString, Charsets.UTF_8)
             println("[Settings] Saved app settings with ${settings.mcpServers.size} MCP servers")
         } catch (e: Exception) {
             println("[Settings] Error saving app settings: ${e.message}")

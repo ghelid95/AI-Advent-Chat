@@ -58,14 +58,14 @@ object EmbeddingStorage {
         val outputFile = File(storageDir, "${sanitizedFileName}_${timestamp}.json")
 
         val jsonString = json.encodeToString(embeddings)
-        outputFile.writeText(jsonString)
+        outputFile.writeText(jsonString, Charsets.UTF_8)
 
         return outputFile
     }
 
     fun loadEmbeddings(file: File): DocumentEmbeddings? {
         return try {
-            val jsonString = file.readText()
+            val jsonString = file.readText(Charsets.UTF_8)
             json.decodeFromString<DocumentEmbeddings>(jsonString)
         } catch (e: Exception) {
             println("Error loading embeddings from ${file.absolutePath}: ${e.message}")

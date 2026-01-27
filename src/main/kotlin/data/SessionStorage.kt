@@ -32,7 +32,7 @@ class SessionStorage {
         try {
             val sessionFile = File(sessionsDir, "${session.id}.json")
             val jsonString = json.encodeToString(session)
-            sessionFile.writeText(jsonString)
+            sessionFile.writeText(jsonString, Charsets.UTF_8)
 
             // Update metadata
             updateMetadata(session.id)
@@ -50,7 +50,7 @@ class SessionStorage {
                 return null
             }
 
-            val jsonString = sessionFile.readText()
+            val jsonString = sessionFile.readText(Charsets.UTF_8)
             json.decodeFromString<SessionData>(jsonString)
         } catch (e: Exception) {
             println("Error loading session $sessionId: ${e.message}")
@@ -65,7 +65,7 @@ class SessionStorage {
             sessionsDir.listFiles { file -> file.extension == "json" && file.name != "metadata.json" }
                 ?.mapNotNull { file ->
                     try {
-                        val jsonString = file.readText()
+                        val jsonString = file.readText(Charsets.UTF_8)
                         val session = json.decodeFromString<SessionData>(jsonString)
                         SessionSummary(
                             id = session.id,
@@ -113,7 +113,7 @@ class SessionStorage {
                 return null
             }
 
-            val metadata = json.decodeFromString<SessionMetadata>(metadataFile.readText())
+            val metadata = json.decodeFromString<SessionMetadata>(metadataFile.readText(Charsets.UTF_8))
             metadata.lastActiveSessionId
         } catch (e: Exception) {
             println("Error reading metadata: ${e.message}")
@@ -126,7 +126,7 @@ class SessionStorage {
         try {
             val metadata = SessionMetadata(lastActiveSessionId = sessionId)
             val jsonString = json.encodeToString(metadata)
-            metadataFile.writeText(jsonString)
+            metadataFile.writeText(jsonString, Charsets.UTF_8)
         } catch (e: Exception) {
             println("Error updating metadata: ${e.message}")
         }
@@ -137,7 +137,7 @@ class SessionStorage {
         try {
             if (!metadataFile.exists()) return
 
-            val metadata = json.decodeFromString<SessionMetadata>(metadataFile.readText())
+            val metadata = json.decodeFromString<SessionMetadata>(metadataFile.readText(Charsets.UTF_8))
             if (metadata.lastActiveSessionId == sessionId) {
                 metadataFile.delete()
             }

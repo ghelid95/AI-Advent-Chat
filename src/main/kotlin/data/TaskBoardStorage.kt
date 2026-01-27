@@ -72,7 +72,7 @@ class TaskBoardStorage {
                 saveTasks(sampleTasks)
                 sampleTasks
             } else {
-                val data = json.decodeFromString<TaskBoardData>(tasksFile.readText())
+                val data = json.decodeFromString<TaskBoardData>(tasksFile.readText(Charsets.UTF_8))
                 println("[TaskBoard] Loaded ${data.tasks.size} tasks")
                 data.tasks
             }
@@ -87,7 +87,7 @@ class TaskBoardStorage {
         try {
             val data = TaskBoardData(tasks)
             val jsonString = json.encodeToString(data)
-            tasksFile.writeText(jsonString)
+            tasksFile.writeText(jsonString, Charsets.UTF_8)
             println("[TaskBoard] Saved ${tasks.size} tasks")
         } catch (e: Exception) {
             println("[TaskBoard] Error saving tasks: ${e.message}")

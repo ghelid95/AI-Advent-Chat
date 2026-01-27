@@ -200,7 +200,7 @@ class ProjectDocsService(
 
             val json = kotlinx.serialization.json.Json { prettyPrint = true; ignoreUnknownKeys = true }
             val jsonString = json.encodeToString(kotlinx.serialization.serializer(), documentEmbeddings)
-            embeddingFile.writeText(jsonString)
+            embeddingFile.writeText(jsonString, Charsets.UTF_8)
             println("[ProjectDocs] Saved embeddings to ${embeddingFile.name}")
 
             return@withContext Result.success(embeddingFile)

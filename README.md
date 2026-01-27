@@ -41,6 +41,18 @@ A feature-rich desktop chat application built with Kotlin and Jetbrains Compose 
 - **Easy Configuration**: Edit `developer-personalization.json` file in project root
 - **Automatic Integration**: Works seamlessly with all chat features
 
+### Voice-to-Text (Speech Recognition) 🆕
+- **Microphone Recording**: Record voice messages directly in the chat interface
+- **Vosk Engine**: Free, offline speech recognition using Vosk library
+- **No API Keys Required**: Works completely offline without subscriptions
+- **Multi-Language Support**: 20+ languages including English, Russian, Spanish, French, German
+- **Visual Indicators**: Real-time recording and transcription status with model installation check
+- **Automatic Sending**: Transcribed text automatically sent to LLM
+- **One-Click Operation**: Simple microphone button next to send button
+- **Audio Quality**: Optimized 16kHz, 16-bit mono recording for speech
+- **Privacy First**: All processing happens locally, audio never leaves your computer
+- **Lightweight**: Small models ~40-50 MB, large models ~1.8-2.5 GB
+
 ### Chat Commands 🆕
 Execute powerful commands directly in chat:
 - **`/help`** - Generate comprehensive project report (architecture, file structure, code samples)
@@ -220,6 +232,11 @@ The application follows a **three-layer MVVM architecture** with **unified state
 - **Ollama** (optional): For local embedding generation
   - Install from [ollama.ai](https://ollama.ai)
   - Pull the embedding model: `ollama pull nomic-embed-text`
+- **Vosk Models** (optional): For voice-to-text feature
+  - Download from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
+  - Extract to `~/.ai-advent-chat/vosk-models/`
+  - No API keys or subscriptions required (completely free and offline)
+- **Microphone** (optional): For voice-to-text feature
 
 ### Environment Setup
 
@@ -355,6 +372,55 @@ Adjust embedding settings in the UI:
 - **Model**: Default `nomic-embed-text`
 - **Chunking Strategy**: Fixed-size (1000 chars, 200 overlap) or paragraph-based
 - **Search Settings**: Top-K (default 3), similarity threshold (default 0.5)
+
+### Voice-to-Text Configuration
+
+Voice-to-text uses **Vosk** - free, offline speech recognition.
+
+**Step 1: Download Vosk Model**
+
+Download a model for your language from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models):
+
+```bash
+# English (40 MB)
+cd ~/.ai-advent-chat/vosk-models
+wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip vosk-model-small-en-us-0.15.zip
+
+# Russian (45 MB)
+wget https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+unzip vosk-model-small-ru-0.22.zip
+```
+
+**Step 2: Enable in Settings**
+
+1. Open Settings (⚙️) in the application
+2. Enable "Voice-to-Text"
+3. Select your language
+4. Check model status (should show ✅ Model installed)
+5. Click Save
+
+**Available Models:**
+- 🇺🇸 English: vosk-model-small-en-us-0.15 (40 MB)
+- 🇷🇺 Russian: vosk-model-small-ru-0.22 (45 MB)
+- 🇪🇸 Spanish: vosk-model-small-es-0.42 (39 MB)
+- 🇫🇷 French: vosk-model-small-fr-0.22 (41 MB)
+- 🇩🇪 German: vosk-model-small-de-0.15 (45 MB)
+- And more at https://alphacephei.com/vosk/models
+
+**Advantages:**
+- ✅ Completely free (no API keys or subscriptions)
+- ✅ Works offline (no internet required after download)
+- ✅ Privacy first (all processing local)
+- ✅ Fast (1-3 seconds for 30 sec audio)
+- ✅ 20+ languages supported
+
+**Requirements:**
+- Vosk model downloaded and extracted
+- Working microphone
+- ~300-500 MB RAM during use
+
+**Cost:** Free! No charges whatsoever.
 
 ### Default Settings
 - **Auto-compaction frequency**: Every 10 messages

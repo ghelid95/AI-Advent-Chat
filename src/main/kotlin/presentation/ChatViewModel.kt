@@ -51,7 +51,11 @@ data class ChatUiState(
     val showTaskReminderDialog: Boolean = false,
     val taskReminderSummary: String = "",
     val isResolvingTicket: Boolean = false,
-    val resolvingTicketId: String? = null
+    val resolvingTicketId: String? = null,
+    val voiceToTextEnabled: Boolean = false,
+    val isRecording: Boolean = false,
+    val isTranscribing: Boolean = false,
+    val voiceLanguage: String? = null
 )
 
 class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
@@ -121,6 +125,10 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private val personalizationLoader = PersonalizationLoader()
     private var activePersonalization: DeveloperPersonalization? = null
 
+    // Voice-to-text support
+    private val audioRecordingService = AudioRecordingService()
+    private var voskClient: VoskClient? = null
+
     // Expose MCP server manager for Project Assistant
     fun getMcpServerManager(): McpServerManager = mcpServerManager
 
@@ -160,7 +168,9 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                     embeddingThreshold = uiState.value.appSettings.embeddingThreshold,
                     codeAssistantEnabled = uiState.value.appSettings.codeAssistantSettings.enabled,
                     codeAssistantWorkingDir = uiState.value.appSettings.codeAssistantSettings.workingDirectory,
-                    codeAssistantSettings = uiState.value.appSettings.codeAssistantSettings
+                    codeAssistantSettings = uiState.value.appSettings.codeAssistantSettings,
+                    voiceToTextEnabled = uiState.value.appSettings.voiceToTextEnabled,
+                    voiceLanguage = uiState.value.appSettings.voiceLanguage
                 )
             }
 
@@ -168,6 +178,23 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             if (uiState.value.embeddingsEnabled || uiState.value.appSettings.codeAssistantSettings.projectDocsEnabled) {
                 ollamaClient = OllamaClient()
                 projectDocsService.updateOllamaClient(ollamaClient!!)
+            }
+
+            // Initialize Vosk client if voice-to-text enabled
+            if (uiState.value.voiceToTextEnabled) {
+                val language = uiState.value.voiceLanguage ?: "en"
+                val modelPath = VoskModelManager.getModelPath(language)
+                if (modelPath != null) {
+                    try {
+                        voskClient = VoskClient(modelPath)
+                        println("[ChatViewModel] Voice-to-text enabled with model: $modelPath")
+                    } catch (e: VoskException) {
+                        println("[ChatViewModel] Failed to initialize Vosk: ${e.message}")
+                    }
+                } else {
+                    println("[ChatViewModel] Voice-to-text enabled but model not found for language: $language")
+                    println(VoskModelManager.getDownloadInstructions(language))
+                }
             }
 
             // Load developer personalization
@@ -219,6 +246,98 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
 
     fun dismissTaskReminderDialog() {
         updateState { copy(showTaskReminderDialog = false) }
+    }
+
+    /**
+     * Starts recording audio from the microphone.
+     */
+    fun startVoiceRecording() {
+        if (uiState.value.isRecording) {
+            println("[Voice] Already recording")
+            return
+        }
+
+        updateState { copy(isRecording = true, errorMessage = null) }
+
+        scope.launch {
+            try {
+                audioRecordingService.startRecording()
+            } catch (e: AudioException) {
+                println("[Voice] Recording error: ${e.message}")
+                updateState {
+                    copy(
+                        isRecording = false,
+                        errorMessage = "Microphone error: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops recording and transcribes the audio to text.
+     */
+    fun stopVoiceRecording() {
+        if (!uiState.value.isRecording) {
+            println("[Voice] Not recording")
+            return
+        }
+
+        updateState { copy(isRecording = false, isTranscribing = true) }
+
+        scope.launch {
+            try {
+                // Stop recording and get audio file
+                val audioFile = audioRecordingService.stopRecording()
+                println("[Voice] Audio file created: ${audioFile.absolutePath}")
+
+                // Initialize Vosk client if needed
+                if (voskClient == null) {
+                    val language = uiState.value.voiceLanguage ?: "en"
+                    val modelPath = VoskModelManager.getModelPath(language)
+                    if (modelPath == null) {
+                        throw VoskException("Vosk model not found. Please download the model first.\n${VoskModelManager.getDownloadInstructions(language)}")
+                    }
+                    voskClient = VoskClient(modelPath)
+                }
+
+                // Transcribe audio
+                val transcribedText = voskClient!!.transcribe(audioFile)
+
+                println("[Voice] Transcription successful: $transcribedText")
+
+                // Send transcribed text as message
+                updateState { copy(isTranscribing = false) }
+                sendMessage(transcribedText)
+
+                // Clean up audio file
+                audioFile.delete()
+            } catch (e: Exception) {
+                println("[Voice] Transcription error: ${e.message}")
+                e.printStackTrace()
+                updateState {
+                    copy(
+                        isTranscribing = false,
+                        errorMessage = when (e) {
+                            is VoskException -> "Speech recognition error: ${e.message}"
+                            is AudioException -> "Audio recording error: ${e.message}"
+                            else -> "Voice-to-text error: ${e.message}"
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Toggles voice recording on/off.
+     */
+    fun toggleVoiceRecording() {
+        if (uiState.value.isRecording) {
+            stopVoiceRecording()
+        } else {
+            startVoiceRecording()
+        }
     }
 
     fun clearJoke() {
@@ -1095,6 +1214,63 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 selectedEmbeddingFile = embeddingFile,
                 embeddingTopK = topK,
                 embeddingThreshold = threshold
+            )
+            updateState { copy(appSettings = newSettings) }
+            appSettingsStorage.saveSettings(newSettings)
+        }
+    }
+
+    fun updateVoiceToTextSettings(enabled: Boolean, language: String?) {
+        updateState {
+            copy(
+                voiceToTextEnabled = enabled,
+                voiceLanguage = language
+            )
+        }
+
+        // Initialize or close Vosk client based on enabled state
+        if (enabled && voskClient == null) {
+            val lang = language ?: "en"
+            val modelPath = VoskModelManager.getModelPath(lang)
+            if (modelPath != null) {
+                try {
+                    voskClient = VoskClient(modelPath)
+                    println("[Voice] Vosk client initialized with model: $modelPath")
+                } catch (e: VoskException) {
+                    println("[Voice] Failed to initialize Vosk: ${e.message}")
+                    updateState {
+                        copy(errorMessage = "Failed to initialize voice recognition: ${e.message}")
+                    }
+                }
+            } else {
+                println("[Voice] Voice-to-text enabled but model not found for language: $lang")
+                updateState {
+                    copy(errorMessage = "Vosk model not found. Please download the model first.")
+                }
+            }
+        } else if (!enabled && voskClient != null) {
+            voskClient?.close()
+            voskClient = null
+            println("[Voice] Vosk client closed")
+        } else if (enabled && voskClient != null && language != null) {
+            // Language changed, reinitialize with new model
+            val modelPath = VoskModelManager.getModelPath(language)
+            if (modelPath != null && modelPath != voskClient?.getModelInfo()) {
+                voskClient?.close()
+                try {
+                    voskClient = VoskClient(modelPath)
+                    println("[Voice] Vosk client reinitialized with new language: $language")
+                } catch (e: VoskException) {
+                    println("[Voice] Failed to reinitialize Vosk: ${e.message}")
+                }
+            }
+        }
+
+        // Save to persistent storage
+        scope.launch {
+            val newSettings = uiState.value.appSettings.copy(
+                voiceToTextEnabled = enabled,
+                voiceLanguage = language
             )
             updateState { copy(appSettings = newSettings) }
             appSettingsStorage.saveSettings(newSettings)

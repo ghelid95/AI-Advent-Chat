@@ -36,12 +36,24 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.1")
 
+    // Vosk - Local Speech Recognition
+    implementation("com.alphacephei:vosk:0.3.45")
+    implementation("net.java.dev.jna:jna:5.13.0")
+
     testImplementation(kotlin("test"))
 }
 
 compose.desktop {
     application {
         mainClass = "MainKt"
+
+        // JVM arguments for proper UTF-8 encoding (required for Vosk on Windows)
+        jvmArgs += listOf(
+            "-Dfile.encoding=UTF-8",
+            "-Dsun.jnu.encoding=UTF-8",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8"
+        )
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Exe)

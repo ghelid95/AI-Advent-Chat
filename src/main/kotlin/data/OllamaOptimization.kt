@@ -140,7 +140,7 @@ class OllamaOptimizer(private val baseUrl: String = "http://localhost:11434") {
     fun loadSettings(): OllamaSettings {
         return try {
             if (settingsFile.exists()) {
-                json.decodeFromString<OllamaSettings>(settingsFile.readText())
+                json.decodeFromString<OllamaSettings>(settingsFile.readText(Charsets.UTF_8))
             } else {
                 OllamaSettings()
             }
@@ -156,7 +156,7 @@ class OllamaOptimizer(private val baseUrl: String = "http://localhost:11434") {
     fun saveSettings(settings: OllamaSettings) {
         try {
             val jsonString = json.encodeToString(settings)
-            settingsFile.writeText(jsonString)
+            settingsFile.writeText(jsonString, Charsets.UTF_8)
             println("[OllamaOptimizer] Saved Ollama settings")
         } catch (e: Exception) {
             println("[OllamaOptimizer] Error saving settings: ${e.message}")

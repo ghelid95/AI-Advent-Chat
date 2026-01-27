@@ -275,7 +275,7 @@ class DataAnalysisService(
             }
         }
 
-        outputFile.writeText(content)
+        outputFile.writeText(content, Charsets.UTF_8)
         println("[DataAnalysis] Exported results to ${outputFile.absolutePath}")
     }
 }

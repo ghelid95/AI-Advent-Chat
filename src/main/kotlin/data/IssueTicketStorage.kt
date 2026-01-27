@@ -71,7 +71,7 @@ class IssueTicketStorage {
                 saveTickets(sampleTickets)
                 sampleTickets
             } else {
-                val data = json.decodeFromString<IssueTicketsData>(ticketsFile.readText())
+                val data = json.decodeFromString<IssueTicketsData>(ticketsFile.readText(Charsets.UTF_8))
                 println("[IssueTickets] Loaded ${data.tickets.size} tickets")
                 data.tickets
             }
@@ -86,7 +86,7 @@ class IssueTicketStorage {
         try {
             val data = IssueTicketsData(tickets)
             val jsonString = json.encodeToString(data)
-            ticketsFile.writeText(jsonString)
+            ticketsFile.writeText(jsonString, Charsets.UTF_8)
             println("[IssueTickets] Saved ${tickets.size} tickets")
         } catch (e: Exception) {
             println("[IssueTickets] Error saving tickets: ${e.message}")

@@ -26,8 +26,11 @@ import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -472,6 +475,44 @@ fun App(viewModel: ChatViewModel, getApiKey: (Vendor) -> String?) {
 
                             Spacer(modifier = Modifier.width(8.dp))
 
+                            // Voice-to-text button (microphone)
+                            if (viewModel.uiState.value.voiceToTextEnabled) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.toggleVoiceRecording()
+                                    },
+                                    enabled = !viewModel.uiState.value.isLoading &&
+                                             !viewModel.uiState.value.isCompacting &&
+                                             !viewModel.uiState.value.isTranscribing,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .background(
+                                            when {
+                                                viewModel.uiState.value.isRecording -> Color.Red
+                                                viewModel.uiState.value.isTranscribing -> Color.Yellow
+                                                else -> MaterialTheme.colorScheme.secondary
+                                            },
+                                            shape = RoundedCornerShape(28.dp)
+                                        )
+                                ) {
+                                    Icon(
+                                        when {
+                                            viewModel.uiState.value.isRecording -> Icons.Default.Stop
+                                            viewModel.uiState.value.isTranscribing -> Icons.Default.HourglassEmpty
+                                            else -> Icons.Default.Mic
+                                        },
+                                        contentDescription = when {
+                                            viewModel.uiState.value.isRecording -> "Stop Recording"
+                                            viewModel.uiState.value.isTranscribing -> "Transcribing..."
+                                            else -> "Start Voice Recording"
+                                        },
+                                        tint = Color.White
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+
                             IconButton(
                                 onClick = {
                                     captureMessage()
@@ -849,9 +890,27 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var editedSelectedEmbedding by remember { mutableStateOf(viewModel.uiState.value.selectedEmbeddingFile) }
     var editedEmbeddingTopK by remember { mutableStateOf(viewModel.uiState.value.embeddingTopK.toString()) }
     var editedEmbeddingThreshold by remember { mutableStateOf(viewModel.uiState.value.embeddingThreshold.toString()) }
+    var editedVoiceToTextEnabled by remember { mutableStateOf(viewModel.uiState.value.voiceToTextEnabled) }
+    var editedVoiceLanguage by remember { mutableStateOf(viewModel.uiState.value.voiceLanguage) }
     var expanded by remember { mutableStateOf(false) }
     var embeddingExpanded by remember { mutableStateOf(false) }
+    var languageExpanded by remember { mutableStateOf(false) }
     val availableEmbeddings = remember { EmbeddingStorage.listEmbeddingFiles() }
+
+    // Popular language options for voice-to-text
+    val languageOptions = listOf(
+        null to "Auto-detect",
+        "en" to "English",
+        "ru" to "Русский",
+        "es" to "Español",
+        "fr" to "Français",
+        "de" to "Deutsch",
+        "it" to "Italiano",
+        "pt" to "Português",
+        "zh" to "中文",
+        "ja" to "日本語",
+        "ko" to "한국어"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1227,6 +1286,122 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     )
                 }
 
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Voice-to-Text Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Enable Voice-to-Text",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Record voice messages using Vosk (offline, free)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = editedVoiceToTextEnabled,
+                        onCheckedChange = { editedVoiceToTextEnabled = it }
+                    )
+                }
+
+                // Voice Language Settings (only show when voice-to-text is enabled)
+                if (editedVoiceToTextEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Voice Language",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Select language (Vosk model must be downloaded first)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    ExposedDropdownMenuBox(
+                        expanded = languageExpanded,
+                        onExpandedChange = { languageExpanded = !languageExpanded }
+                    ) {
+                        val selectedLanguageName = languageOptions.find { it.first == editedVoiceLanguage }?.second ?: "Auto-detect"
+
+                        OutlinedTextField(
+                            value = selectedLanguageName,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Gray
+                            )
+                        )
+                        ExposedDropdownMenu(
+                            expanded = languageExpanded,
+                            onDismissRequest = { languageExpanded = false }
+                        ) {
+                            languageOptions.forEach { (code, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        editedVoiceLanguage = code
+                                        languageExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Show model status
+                    val selectedLang = editedVoiceLanguage ?: "en"
+                    val modelPath = remember(selectedLang) {
+                        data.VoskModelManager.getModelPath(selectedLang)
+                    }
+                    val modelsDir = data.VoskModelManager.getModelsDirectory()
+
+                    if (modelPath != null) {
+                        Text(
+                            "✅ Model installed: ${File(modelPath).name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF4CAF50) // Green
+                        )
+                    } else {
+                        Column {
+                            Text(
+                                "⚠️ Model not found for selected language",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFF9800) // Orange
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Download from: https://alphacephei.com/vosk/models",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Extract to: $modelsDir",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Note: Changes apply immediately to your next message. You can optionally clear the chat for a fresh start.",
@@ -1254,6 +1429,9 @@ fun SettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     val topK = editedEmbeddingTopK.toIntOrNull()?.coerceIn(1, 10) ?: 3
                     val threshold = editedEmbeddingThreshold.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.5f
                     viewModel.updateEmbeddingSettings(editedEmbeddingsEnabled, editedSelectedEmbedding, topK, threshold)
+
+                    // Save voice-to-text settings
+                    viewModel.updateVoiceToTextSettings(editedVoiceToTextEnabled, editedVoiceLanguage)
 
                     onDismiss()
                 }

@@ -843,7 +843,7 @@ Current project context may be provided. Use this to inform your actions."""
                     totalCost = uiState.value.totalCost
                 )
             )
-            conversationFile.writeText(json.encodeToString(data))
+            conversationFile.writeText(json.encodeToString(data), Charsets.UTF_8)
         } catch (e: Exception) {
             println("[ProjectAssistant] Error saving conversation: ${e.message}")
         }
@@ -855,7 +855,7 @@ Current project context may be provided. Use this to inform your actions."""
     private fun loadConversation() {
         try {
             if (conversationFile.exists()) {
-                val data = json.decodeFromString<ProjectAssistantData>(conversationFile.readText())
+                val data = json.decodeFromString<ProjectAssistantData>(conversationFile.readText(Charsets.UTF_8))
                 messages.clear()
                 messages.addAll(data.messages)
 
