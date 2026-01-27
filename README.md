@@ -31,6 +31,16 @@ A feature-rich desktop chat application built with Kotlin and Jetbrains Compose 
 - **Smart Reference Detection**: Identifies file names, paths, class names, function names, and error lines in queries
 - **Configurable**: Adjust max files, patterns, and file size limits
 
+### Developer Personalization 🆕
+- **Personalized Responses**: Configure LLM to understand your development preferences
+- **Architecture Preferences**: MVVM, Clean Architecture, MVI, or hybrid approaches
+- **Coding Style**: Functional, OOP, or mixed paradigms; naming conventions
+- **Tools & Technologies**: Specify your tech stack (Coroutines, Compose, Ktor, Dagger, etc.)
+- **Development Practices**: Define your principles (DRY, KISS, YAGNI, SOLID)
+- **Response Style**: Control detail level and whether to include examples/trade-offs
+- **Easy Configuration**: Edit `developer-personalization.json` file in project root
+- **Automatic Integration**: Works seamlessly with all chat features
+
 ### Chat Commands 🆕
 Execute powerful commands directly in chat:
 - **`/help`** - Generate comprehensive project report (architecture, file structure, code samples)
@@ -276,6 +286,46 @@ Configure via Code Assistant settings:
 - **Include History**: Include recent commits in context
 - **Max Diff Lines**: Maximum diff lines to include (default: 500)
 - **Max Commits**: Number of commits in history (default: 5)
+
+### Developer Personalization Configuration
+
+Configure LLM to understand your development preferences via `developer-personalization.json`:
+
+```json
+{
+  "enabled": true,
+  "architecture": {
+    "primaryPattern": "MVVM",
+    "errorHandling": "Combined approach",
+    "projectStructure": "Modular architecture",
+    "dependencyInjection": "Dagger 2"
+  },
+  "codingStyle": {
+    "programmingParadigm": "Mixed style",
+    "asyncApproach": "Coroutines with suspend functions",
+    "namingConventions": ["camelCase", "Descriptive names"]
+  },
+  "tools": {
+    "frameworks": ["Kotlin Coroutines", "Compose Desktop", "Ktor", "Dagger 2"]
+  },
+  "practices": {
+    "principles": ["DRY", "KISS", "YAGNI"],
+    "testingApproach": ["Integration tests"],
+    "documentationLevel": "KDoc for public API"
+  },
+  "responseStyle": {
+    "detailLevel": "Balanced responses",
+    "includeExamples": true,
+    "explainTradeoffs": true
+  }
+}
+```
+
+**Configuration locations:**
+- Project-level: `./developer-personalization.json` (takes precedence)
+- Global: `~/.ai-advent-chat/app-settings.json` (developerPersonalization section)
+
+**See [PERSONALIZATION.md](PERSONALIZATION.md) for detailed configuration guide**
 
 ### MCP Server Configuration
 

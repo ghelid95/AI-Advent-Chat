@@ -1,0 +1,45 @@
+{
+  "enabled": true,
+  "architecture": {
+    "primaryPattern": "MVVM (Model-View-ViewModel)",
+    "errorHandling": "Комбинированный подход - использование разных подходов в зависимости от контекста",
+    "projectStructure": "Модульная архитектура - разделение на независимые Gradle модули",
+    "dependencyInjection": "Dagger 2 - compile-time инъекция зависимостей"
+  },
+  "codingStyle": {
+    "programmingParadigm": "Смешанный стиль - комбинация ООП и функционального программирования",
+    "asyncApproach": "Coroutines с suspend функциями",
+    "namingConventions": [
+      "camelCase для переменных",
+      "Говорящие имена - полные, описывающие имена без сокращений",
+      "Не делать интерфейсы для 1 реализации если нет надобности скрыть имплементацию"
+    ]
+  },
+  "tools": {
+    "primaryLanguage": "Kotlin",
+    "frameworks": [
+      "Kotlin Coroutines",
+      "Jetpack Compose / Compose Desktop",
+      "Ktor",
+      "Gradle Kotlin DSL",
+      "Dagger 2"
+    ],
+    "buildSystem": "Gradle Kotlin DSL"
+  },
+  "practices": {
+    "principles": [
+      "DRY (Don't Repeat Yourself) - избегать дублирования кода",
+      "KISS (Keep It Simple, Stupid) - простота и понятность кода",
+      "YAGNI (You Aren't Gonna Need It) - не добавлять функциональность заранее"
+    ],
+    "testingApproach": [
+      "Integration тесты - тестирование взаимодействия компонентов"
+    ],
+    "documentationLevel": "KDoc для public API - документировать только публичные интерфейсы"
+  },
+  "responseStyle": {
+    "detailLevel": "Сбалансированные ответы - средний уровень детализации",
+    "includeExamples": true,
+    "explainTradeoffs": true
+  }
+}

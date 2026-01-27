@@ -15,7 +15,8 @@ data class AppSettings(
     val selectedEmbeddingFile: String? = null,
     val embeddingTopK: Int = 3,
     val embeddingThreshold: Float = 0.5f,
-    val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings()
+    val codeAssistantSettings: CodeAssistantSettings = CodeAssistantSettings(),
+    val developerPersonalization: DeveloperPersonalization = DeveloperPersonalization()
 )
 
 class AppSettingsStorage {

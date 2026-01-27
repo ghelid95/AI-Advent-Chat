@@ -116,6 +116,11 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
     private var issueResolverService: IssueResolverService? = null
     private val issueTicketStorage = IssueTicketStorage()
 
+    // Personalization support
+    private val personalizationService = PersonalizationService()
+    private val personalizationLoader = PersonalizationLoader()
+    private var activePersonalization: DeveloperPersonalization? = null
+
     // Expose MCP server manager for Project Assistant
     fun getMcpServerManager(): McpServerManager = mcpServerManager
 
@@ -165,7 +170,26 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 projectDocsService.updateOllamaClient(ollamaClient!!)
             }
 
+            // Load developer personalization
+            loadPersonalization()
+
 //            initializeTaskReminder()
+        }
+    }
+
+    private fun loadPersonalization() {
+        try {
+            // Load personalization (external file takes precedence over app settings)
+            activePersonalization = personalizationLoader.loadPersonalization(uiState.value.appSettings)
+
+            if (activePersonalization?.enabled == true) {
+                println("[ChatViewModel] Developer personalization is enabled")
+            } else {
+                println("[ChatViewModel] Developer personalization is disabled")
+            }
+        } catch (e: Exception) {
+            println("[ChatViewModel] Error loading personalization: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -678,6 +702,20 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
         }
     }
 
+    /**
+     * Generates personalized system prompt by combining base prompt with developer preferences.
+     */
+    private fun getPersonalizedSystemPrompt(): String {
+        val basePrompt = uiState.value.systemPrompt
+        val personalization = activePersonalization
+
+        return if (personalization?.enabled == true) {
+            personalizationService.generatePersonalizedPrompt(personalization, basePrompt)
+        } else {
+            basePrompt
+        }
+    }
+
     private suspend fun executeSingleRound() {
         try {
             // Build API messages including compacted summaries
@@ -694,9 +732,12 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
                 }
             } else null
 
+            // Use personalized system prompt
+            val systemPrompt = getPersonalizedSystemPrompt()
+
             val result = client.sendMessage(
                 chatMessages,
-                uiState.value.systemPrompt,
+                systemPrompt,
                 uiState.value.temperature,
                 uiState.value.selectedModel,
                 uiState.value.maxTokens,
@@ -734,11 +775,14 @@ class ChatViewModel(apiKey: String, vendor: Vendor = Vendor.ANTHROPIC) {
             // Build context from current conversation (excluding the just-added user message)
             val context = buildAPIMessageList().dropLast(1)
 
+            // Use personalized system prompt
+            val systemPrompt = getPersonalizedSystemPrompt()
+
             // Execute pipeline
             val result = mcpPipeline!!.execute(
                 initialPrompt = content,
                 context = context,
-                systemPrompt = uiState.value.systemPrompt,
+                systemPrompt = systemPrompt,
                 temperature = uiState.value.temperature,
                 model = uiState.value.selectedModel,
                 maxTokens = uiState.value.maxTokens,
